@@ -23,7 +23,7 @@
 import { Plugin, usePlugin } from "@opencode/plugin/tui";
 import { For, Show, createMemo, createSignal } from "solid-js";
 import { onCleanup, onMount } from "solid-js";
-import { DEFAULT_CONFIG, parseConfig, type GaugeConfig } from "./config.ts";
+import { parseConfig, type GaugeConfig } from "./config.ts";
 import type { PlanUsage, PlanUsageAdapter } from "./providers/types.ts";
 import { CACHE_TTL_MS, WIDGET_TICK_MS, createPlanSource, type PlanSource } from "./usage.ts";
 import { adapterForProvider, resolveAdapters } from "./registry.ts";
@@ -347,6 +347,7 @@ async function showUsageDialog(
 		};
 	},
 	adapters: PlanUsageAdapter[],
+	showCountdown: boolean,
 ): Promise<void> {
 	const adapter = adapterForCommand(adapters, context.ui.model.current()?.providerID);
 	if (adapter === undefined) {
@@ -361,7 +362,7 @@ async function showUsageDialog(
 	const error = errors()[adapter.id];
 	const body =
 		state !== undefined
-			? `${formatSnapshotText(state.data, true)}${state.stale ? "\n(stale — last successful fetch, retry later)" : ""}`
+			? `${formatSnapshotText(state.data, showCountdown)}${state.stale ? "\n(stale — last successful fetch, retry later)" : ""}`
 			: (error ?? "usage unavailable: unknown error");
 	await context.ui.dialog.alert({
 		title: `${adapter.label} usage`,
@@ -430,7 +431,8 @@ export default Plugin.define({
 							palette: true,
 							slash: { name: "usage" },
 							suggested: true,
-							run: async (_input) => void (await showUsageDialog(context, adapters)),
+							run: async (_input) =>
+								void (await showUsageDialog(context, adapters, config.showCountdown)),
 						},
 					],
 					bindings: [],
@@ -440,5 +442,3 @@ export default Plugin.define({
 		});
 	},
 });
-
-export { DEFAULT_CONFIG };

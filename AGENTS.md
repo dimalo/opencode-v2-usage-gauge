@@ -30,7 +30,7 @@ OpenCode 1 does not load V2 plugins.
   ANSI-painted strings, because the OpenTUI JSX applies theme tokens. The
   layout logic is verbatim; only the accepted input type was widened
   (`WindowLike`) so any adapter's windows can feed it.
-- `src/cache.ts`/`src/config.ts` are ours.
+- `src/config.ts` is ours (layout, placement, width budget, provider list).
 
 ## Loader contract (verified on v2.0.18)
 

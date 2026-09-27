@@ -141,6 +141,15 @@ sibling pi extension; the layout logic is verbatim, with the accepted window
 type widened so provider adapters can feed it. Everything provider-specific
 lives in `src/providers/`.
 
+## Contributing
+
+See [CONTRIBUTING.md](CONTRIBUTING.md) — including how to add a provider
+adapter, the "never make the gauge lie, never crash the TUI" rule, and the test
+gate every PR (and every Dependabot bump) has to pass.
+
+Security: credentials are read in memory and never persisted. Report
+vulnerabilities via [private advisories](SECURITY.md).
+
 ## License
 
 MIT
