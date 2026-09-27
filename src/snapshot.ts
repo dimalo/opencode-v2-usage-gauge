@@ -129,7 +129,12 @@ function widgetLabel(window: WindowLike, nowMs: number): string {
  * d ≥ 3 → width ≥ 6.
  */
 export const MIN_GAUGE_WIDTH = 6;
-const PREFIX_WIDTH = 3; // "Go "
+/**
+ * Default width of the provider tag plus its trailing space ("Go " = 3).
+ * Callers pass the measured width of their own tag, because a longer tag
+ * ("Zen " = 4) would otherwise steal a cell from every window's track.
+ */
+const DEFAULT_PREFIX_WIDTH = 3;
 const SEGMENT_SEPARATOR_WIDTH = 3; // " · "
 
 /** One segment of the single-line gauge widget. */
@@ -211,6 +216,7 @@ export function layoutWidgetLine(
 	nowMs: number,
 	width: number,
 	showCountdown = true,
+	prefixWidth = DEFAULT_PREFIX_WIDTH,
 ): WidgetLineLayout {
 	const n = windows.length;
 	if (n === 0) return { segments: [], showCountdown: false };
@@ -238,7 +244,7 @@ export function layoutWidgetLine(
 	// budget is too small, so the returned line ALWAYS fits `width` (the
 	// rolling window is kept — it is the one that changes fastest).
 	const staticWidth = (count: number) =>
-		PREFIX_WIDTH +
+		prefixWidth +
 		SEGMENT_SEPARATOR_WIDTH * Math.max(0, count - 1) +
 		base
 			.slice(0, count)

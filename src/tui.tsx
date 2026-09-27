@@ -234,7 +234,15 @@ function UsageGauge(props: { config: GaugeConfig; adapters: PlanUsageAdapter[] }
 			props.config.maxWidth > 0
 				? Math.min(full, props.config.maxWidth)
 				: Math.max(48, Math.min(full, Math.floor(full / 2)));
-		const layout = layoutWidgetLine(current.data.windows, now(), budget, props.config.showCountdown);
+		// The provider tag is measured, not assumed: "Go " is 3 cells, "Zen "
+		// would be 4, and a wrong guess silently steals track width.
+		const layout = layoutWidgetLine(
+			current.data.windows,
+			now(),
+			budget,
+			props.config.showCountdown,
+			prefix().length,
+		);
 		return (
 			<text>
 				<span style={{ fg: color("dim") }}>{prefix()}</span>

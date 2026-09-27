@@ -336,3 +336,30 @@ test("layoutWidgetLine never exceeds the width budget", () => {
 	// Generous width keeps all three windows.
 	assert.equal(layoutWidgetLine(windows, Date.now(), 200, true).segments.length, 3);
 });
+
+test("layoutWidgetLine: the provider tag width is measured, not assumed", () => {
+	// "Go " is the historical default (3 cells) and must stay byte-identical.
+	// Countdown off, so the track gets the full remainder: floor((120-20)/3).
+	const base = layoutWidgetLine(threeWindows(), LAYOUT_NOW, 120, false);
+	assert.equal(base.segments[0]!.gaugeWidth, 33);
+	// A wider tag takes its cells out of the tracks instead of overflowing:
+	// static content grows 3 → 7, so floor((120-24)/3) = 32 per window.
+	const wide = layoutWidgetLine(threeWindows(), LAYOUT_NOW, 120, false, 7);
+	assert.equal(wide.segments[0]!.gaugeWidth, 32);
+	// ...and a narrower one gives them back.
+	const narrow = layoutWidgetLine(threeWindows(), LAYOUT_NOW, 120, false, 2);
+	assert.equal(narrow.segments[0]!.gaugeWidth, 33);
+	assert.equal(narrow.segments[0]!.gaugeWidth - base.segments[0]!.gaugeWidth, 0);
+	// The rendered line never exceeds the budget for any tag width.
+	for (const prefixWidth of [1, 3, 4, 10]) {
+		const layout = layoutWidgetLine(threeWindows(), LAYOUT_NOW, 60, true, prefixWidth);
+		const rendered =
+			prefixWidth +
+			layout.segments.reduce(
+				(acc, segment, i) =>
+					acc + (i > 0 ? 3 : 0) + segment.label.length + 1 + segment.gaugeWidth,
+				0,
+			);
+		assert.ok(rendered <= 60, `overflow with prefix ${prefixWidth}: ${rendered}`);
+	}
+});

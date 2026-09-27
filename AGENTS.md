@@ -15,12 +15,21 @@ OpenCode 1 does not load V2 plugins.
   extension seam: one file per provider, nothing else changes.
 - `src/providers/go.ts` — OpenCode Go adapter (endpoint, credential, parse).
   Future adapters (Zen, Copilot, Kiro) go beside it.
+- `src/spend.ts` — local consumption meter, currently **unwired groundwork**.
+  Pure and side-effect free: sums the tracked provider's assistant `cost` over
+  the session family. It exists for pay-as-you-go providers; no adapter
+  consumes it yet, because Zen's balance has no API (anomalyco/opencode#44189).
+  Do not wire it to a provider that cannot report a budget — a delta is not a
+  percentage.
 - `src/registry.ts` — the one place adapters are registered and enabled.
 - `src/usage.ts` — provider-agnostic plumbing: credential resolution,
   single-flight fetch, 5 min TTL, last-good snapshot retention.
 - `src/tui.tsx` — the only OpenCode-specific module (Solid JSX, slot claims,
   keymap layer, per-provider shared state).
 - `src/auth.ts` — API-key lookup in OpenCode's auth store, by provider id.
+- OpenCode Zen is intentionally **not registered**: its credit balance has no
+  API-key endpoint (issue #44189), so a Zen entry could only show a
+  session-scoped delta, not a plan gauge. Revisit when the endpoint ships.
 - `src/parser.ts` is **copied verbatim** from the pi extension — do not edit
   here; its unit tests live in `test/` (also carried over verbatim). If the
   upstream pi extension changes the parser, copy it again. The Go adapter

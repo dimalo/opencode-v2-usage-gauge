@@ -57,6 +57,27 @@ export interface PlanWindow {
 	status?: string;
 }
 
+/**
+ * What a spend figure is measured over. `"session"` is the session plus its
+ * subagent family; `"account"` would need history the local data layer does not
+ * expose yet.
+ */
+export type SpendScope = "session" | "account";
+
+/**
+ * Consumption over a scope — the *delta*, which is a different question from
+ * `PlanBalance` (what is left). Never derive one from the other: a consumed
+ * amount is not a remaining amount, and a budget we cannot read is not a
+ * budget of zero.
+ */
+export interface PlanSpend {
+	/** Amount consumed over `scope`. */
+	amount: number;
+	/** ISO currency code. */
+	currency: string;
+	scope: SpendScope;
+}
+
 /** Remaining prepaid credit, for providers that bill by usage instead of windows. */
 export interface PlanBalance {
 	/** Remaining amount in `currency` units. */
@@ -75,6 +96,18 @@ export interface PlanUsage {
 	windows: PlanWindow[];
 	/** Remaining credit; absent for pure subscription providers. */
 	balance?: PlanBalance;
+	/**
+	 * Consumption over a scope; see `PlanSpend`. Reserved for pay-as-you-go
+	 * providers: the local meter in `src/spend.ts` can produce it, but no
+	 * registered adapter does yet (OpenCode Zen's balance has no API — see
+	 * anomalyco/opencode#44189), so nothing renders it today.
+	 */
+	spend?: PlanSpend;
+	/**
+	 * Adapter-supplied explanation for what it could not report. Renders only
+	 * where a number is absent, so it can never stand in for one.
+	 */
+	note?: string;
 	/** Epoch ms of the fetch that produced this data. */
 	fetchedMs: number;
 	/** False when the payload contained nothing recognizable. */
@@ -89,7 +122,7 @@ export type PlanOutcome =
 	| { ok: false; kind: PlanFetchFailure; error: string };
 
 /** What the gauge is expected to be able to show for this provider. */
-export type PlanKind = "windows" | "balance" | "both";
+export type PlanKind = "windows" | "balance" | "spend" | "both";
 
 /**
  * One provider integration. `fetch` must resolve (never reject) so a broken

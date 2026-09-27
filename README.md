@@ -94,7 +94,23 @@ width math, the sidebar layout, the dialog — is provider-agnostic.
 | --------------- | --------------- | --------------------------------------- | ------ |
 | `opencode-go`   | rolling / weekly / monthly windows | key from OpenCode's auth store | shipped |
 
-Adding one is a single file in `src/providers/` plus a line in
+### Not yet: OpenCode Zen
+
+Zen is pay-as-you-go, and its credit wallet has **no API-key endpoint** — every
+`/zen/v1/*` usage or balance path returns 404, and the balance is only readable
+from the web console behind a browser session. Upstream tracks this as
+[anomalyco/opencode#44189](https://github.com/anomalyco/opencode/issues/44189).
+So there is no honest gauge to draw for Zen yet, and the plugin does not
+pretend otherwise: a consumed amount is not a percentage, and a budget we cannot
+read is not a budget of zero.
+
+The groundwork is in place for when that endpoint ships: `PlanUsage.spend`
+(consumption over a scope) sits beside `PlanUsage.balance` (remaining) in the
+contract, and `src/spend.ts` is a tested, pure local meter that derives
+credits-consumed from OpenCode's own per-message cost, scoped to the session
+family. Registering Zen is then one adapter file plus one registry line.
+
+Adding a provider is a single file in `src/providers/` plus a line in
 `src/registry.ts`:
 
 ```ts
