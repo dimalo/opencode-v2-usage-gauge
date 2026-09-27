@@ -1,70 +1,54 @@
-# opencode-go-usage
+# opencode-v2-usage-gauge
 
-OpenCode plugin: show your **OpenCode Go** subscription usage in the TUI — a
-**single-line ASCII gauge** appended to the prompt footer status row with the
-three budget windows (rolling 5h / weekly / monthly), dynamic window labels
-and a live rolling countdown, plus a `/usage` slash command that shows the
-full three-window snapshot in a dialog (and refreshes the widget).
-
-The widget appears **only while an `opencode-go` model is the selected model**
-(`providerID === "opencode-go"`) and disappears automatically when you switch
-to another provider. The `/usage` command works regardless of the active
-model (it always queries the `opencode-go` endpoint). Out of scope for now:
-zen / credit-balance usage — Go plan windows only; may be extended later.
+**An ASCII plan-usage gauge for the OpenCode 2 TUI** — a single line in the
+prompt footer (or a block in the session sidebar), plus a `/usage` command.
+Zero config: the credential comes from OpenCode's own auth store.
 
 ```
-Go  5h ════│12%────── ⟳3h47m · Mon ═══════24%│─── · 14d ════│12%──────
+Go  5h ════│8%────── ⟳3h26m · Mon ═══════│44%── · 18d ═══════│42%──
 ```
 
-Each segment is a **pure-ASCII gauge**: `═` for the filled span, `─` for the
-unfilled track, a `│` divider at the fill boundary, and the percentage drawn
-INSIDE the track — trailing the divider below 50% (`│12%`), prefixing it at
-50%+ (`60%│`). Only the percent text is colored by threshold
-(< 75% theme accent, 75–99% warning, ≥ 100% error); track glyphs are dim.
+> **Requires OpenCode 2 (v2.0.18+).** This is a V2 CLI plugin: it uses the V2
+> plugin API, the V2 slot tree (`prompt.footer.status`, `sidebar.footer`) and
+> is configured in `cli.json`. OpenCode 1 will not load it — V1 plugin
+> implementations do not run in V2. Check with `opencode --version`.
 
-Labels are dynamic: rolling `5h` (+ the `⟳` countdown), weekly = weekday the
-week rolls over on (`Mon`…`Sun`), monthly = days remaining (`14d`). Track
-width is **variable**: recomputed every render from the terminal width. On
-narrow terminals the countdown is dropped first, then tracks shrink to a
-minimum of 6 cells, then the line truncates.
+## Why this one
 
-## How it works
+Most plan-usage plugins ask you to go get a credential: paste a browser
+cookie, copy a workspace id, export an env var. This one doesn't. It reads the
+key you already connected to OpenCode, so for OpenCode Go it works the moment
+you install it.
 
-- **Data source:** the official usage endpoint
-  `GET https://opencode.ai/zen/go/v1/usage` (live since 2026-08-11, upstream
-  PR anomalyco/opencode#16513). Bearer auth only. Observed live payload:
-  `{"usage":{"rolling":{"status":"ok","percent":3,"resetsAt":"..."},...}}` —
-  the parser stays lenient against renames.
-- **Auth:** the API key is read at runtime from OpenCode's own auth store
-  (`~/.local/share/opencode/auth.json` → `"opencode-go"` entry, `XDG_DATA_HOME`
-  aware; see `src/auth.ts`). The key is never logged, printed, or written to
-  any file by this plugin.
-- **Fetching:** on plugin mount and then at most every ~5 min (TTL); a 60 s
-  ticker refreshes the countdown and triggers a re-fetch once the cache has
-  aged past the TTL. Transient failures keep the last data visible, marked
-  `(stale)`. A 401 or a missing key hides the widget — no plan, no widget.
-- **Shared state:** the widget and `/usage` share one module-level snapshot
-  and one single-flight fetch, so `/usage` never duplicates a request and a
-  fresh fetch updates the widget immediately.
-- **No server-side behavior:** the server entry (`src/index.ts`) is a stub;
-  all behavior is client-side (TUI) and therefore active only in the terminal.
+- **Zero configuration** — no cookie, no workspace id, no config file, no secrets in your config.
+- **Always visible, zero context cost** — one ASCII line appended to the prompt footer row. It never enters the conversation, so it can't pollute the model's context.
+- **Follows your model** — the gauge tracks whichever provider the selected model belongs to.
+- **Pluggable providers** — each billing API is a small adapter that normalizes to one shape. OpenCode Go ships today; OpenCode Zen, GitHub Copilot, Kiro and others are additive.
+- **No dependencies, no build step** — TypeScript loaded directly by the host. 79 unit tests.
 
 ## Install
 
-Verified on OpenCode `v2.0.18`.
-
-Option A — configure the local clone directly (global config). The plugin
-MUST be given as a **directory** and needs the repo's root-level `server.ts`
-and `tui.tsx` entry files (both included here):
-
 ```bash
-git clone <repo-url> opencode-go-usage
-cd opencode-go-usage && npm install   # zero runtime deps; node_modules only for dev
+git clone https://github.com/dimalo/opencode-v2-usage-gauge
+cd opencode-v2-usage-gauge && npm install   # zero runtime deps; node_modules only for dev
 ```
 
 ```jsonc title="~/.config/opencode/cli.json"
 {
-  "plugins": ["/absolute/path/to/opencode-go-usage"]
+  "plugins": ["opencode-v2-usage-gauge"]
+}
+```
+
+With options:
+
+```jsonc title="~/.config/opencode/cli.json"
+{
+  "plugins": [
+    {
+      "package": "opencode-v2-usage-gauge",
+      "options": { "placement": "sidebar" }
+    }
+  ]
 }
 ```
 
@@ -79,7 +63,7 @@ cd opencode-go-usage && npm install   # zero runtime deps; node_modules only for
 Option B — drop the clone into the global discovery directory:
 
 ```bash
-cp -R opencode-go-usage ~/.config/opencode/plugins/opencode-go-usage
+cp -R opencode-v2-usage-gauge ~/.config/opencode/plugins/opencode-v2-usage-gauge
 ```
 
 (Files, `src/…` paths and `exports` subpaths are NOT accepted for local
@@ -90,101 +74,72 @@ instances — the TUI entry loads per TUI process).
 
 ## Config
 
-Pass plugin options in the `plugins` entry of `cli.json` (object form), e.g.:
+| Key             | Values                                        | Default          | Meaning                                                       |
+| --------------- | --------------------------------------------- | ---------------- | ------------------------------------------------------------- |
+| `layout`        | `"single"` \| `"multi"`                       | `"single"`       | One compact line, or a title plus one line per window         |
+| `showCountdown` | `true` \| `false`                             | `true`           | Show reset countdowns (⟳ on the line; `reset …` in multi/dialog) |
+| `placement`     | `"promptFooter"` \| `"sidebar"` \| `"both"`   | `"promptFooter"` | Claim the prompt footer row, the session sidebar, or both. `sidebar` renders the multi-line variant |
+| `maxWidth`      | number of cells                               | `0` (auto)       | Cell budget for the single line. `0` = at most half the row (min 48), because the footer row is shared with the built-in cost/hint items |
+| `providers`     | `"all"` or a list of adapter ids              | `["opencode-go"]` | Which providers the gauge tracks. The gauge follows the selected model, so this is a filter on top of "provider has an adapter" |
 
-```jsonc title="~/.config/opencode/cli.json"
-{
-  "plugins": [
-    { "package": "/absolute/path/to/opencode-go-usage", "options": { "placement": "sidebar" } }
-  ]
-}
+The options hold **no secrets** — credentials stay in OpenCode's auth store.
+
+## Providers
+
+An adapter answers two questions for one OpenCode `providerID`: how to
+authenticate, and what its billing API says. Everything else — the gauge, the
+width math, the sidebar layout, the dialog — is provider-agnostic.
+
+| Adapter id      | Plan            | Credential                              | Status |
+| --------------- | --------------- | --------------------------------------- | ------ |
+| `opencode-go`   | rolling / weekly / monthly windows | key from OpenCode's auth store | shipped |
+
+Adding one is a single file in `src/providers/` plus a line in
+`src/registry.ts`:
+
+```ts
+export const ZEN_ADAPTER: PlanUsageAdapter = {
+  id: "opencode-zen",
+  label: "OpenCode Zen",
+  planKind: "balance",              // windows | balance | both
+  async credential() { /* bearer | header | cookie */ },
+  async fetch(credential) { /* → PlanOutcome */ },
+};
 ```
 
-| Key            | Values                       | Default    | Meaning                                                       |
-| -------------- | ---------------------------- | ---------- | ------------------------------------------------------------- |
-| `layout`       | `"single"` \| `"multi"`      | `"single"` | One compact line, or a title plus one line per window         |
-| `showCountdown`| `true` \| `false`            | `true`     | Show reset countdowns (⟳ on the line; `reset …` in multi/dialog) |
-| `placement`    | `"promptFooter"` \| `"sidebar"` \| `"both"` | `"promptFooter"` | Claim the prompt footer row, the session sidebar, or both. `sidebar` renders the multi-line variant |
-| `maxWidth`     | number of cells              | `0` (auto) | Cell budget for the single line. `0` = at most half the row (min 48), because the footer row is shared with the built-in cost/hint items |
+Credentials are a union (`bearer` / `header` / `cookie`) on purpose: API-key
+providers and OAuth/console providers need different things, and the interface
+should not force a rewrite when the second kind arrives. Pay-as-you-go
+providers report `balance` instead of `windows`; the gauge omits what a
+provider does not have instead of rendering a lie.
 
-The options hold **no secrets** — the API key always stays in OpenCode's
-auth store.
+## Nothing shows up?
 
-## Requirements
+1. `opencode --version` reports `1.x` → this plugin is OpenCode 2 only. V1 does not load V2 plugins.
+2. Installed via `tui.json` / a `plugin` (singular) key → move the entry to `cli.json` `plugins` (V2 auto-migrates `tui.json` for you).
+3. Configured correctly but silent → the gauge follows the *selected model*. Pick a model from a tracked provider (`/models`). `/usage` works regardless of the selected model.
+4. `/usage` says no credentials → connect the provider first (`/connect` → OpenCode Go). The plugin never invents or stores credentials.
 
-- OpenCode V2 (`v2.0.18+`) with the `opencode-go` provider connected
-  (`/connect` → OpenCode Go).
-- An `opencode-go` model selected (`/models`) for the widget to appear.
+## Not this one? Try these
 
-## Manual test plan (run in the real TUI)
+Honest alternatives, all solving a slightly different problem:
 
-1. **Show:** start the TUI with an `opencode-go` model selected. Within a few
-   seconds a single line appears in the prompt footer status row with three
-   ASCII gauges (`Go  5h ════│12%──── ⟳3h47m · Mon … · 14d …`), refreshed from
-   the live endpoint.
-2. **Variable-width tracks:** resize the terminal — every gauge grows/shrinks
-   (equal split). Narrow down: the countdown drops first, then tracks hold at
-   6 cells, then the line truncates with `…`. Watch the % flip sides of the
-   divider as spending crosses 50%.
-3. **Multi layout:** set `"layout": "multi"` in the plugin options, restart →
-   title + one line per window (10-cell bar, percent, `reset …`).
-   `"showCountdown": false` → all countdowns disappear.
-4. **Switch away:** `/models` to a non-`opencode-go` model — the widget
-   disappears immediately; switching back re-shows it (cached, no refetch if
-   < 5 min).
-5. **Stale path:** disconnect the network, switch model away and back → the
-   previously fetched numbers reappear with a `(stale)` marker instead of
-   crashing or vanishing.
-6. **401 path:** revoke/reset the opencode-go key in the auth store
-   (temporarily), switch model away and back → widget stays hidden, no errors.
-7. **Periodic refresh:** leave the session open ~5–6 minutes while running a
-   few Go requests → the gauges update by themselves; the `⟳` countdown keeps
-   ticking every minute.
-8. **`/usage`:** type `/usage` with any model active → a dialog shows the
-   three windows (label, 10-cell bar, percent, dollars when reported, reset
-   countdown); the widget refreshes from the same fetch.
-9. **`/usage` — no key configured:** temporarily point the plugin at a
-   machine without the opencode-go auth entry → an error line shows
-   ("No API key configured…"), nothing crashes.
+- [slkiser/opencode-quota](https://github.com/slkiser/opencode-quota) — multi-provider quota and token tracking with toasts and slash commands.
+- [opencode-go-usage-tui](https://www.npmjs.com/package/opencode-go-usage-tui) — OpenCode Go quota plus per-model price/limit tables and change tracking (needs a console cookie).
+- [ColorlessBoy/opencode-go-quota](https://github.com/ColorlessBoy/opencode-go-quota) — `/quota` dialog with multi-plan key switching.
+- [wiscaksono/opencode-usage](https://github.com/wiscaksono/opencode-usage) — native macOS menu bar app for the same numbers.
 
 ## Development
 
-```bash
-npm install        # devDependencies + @opencode/plugin + TUI peer types
-npm test           # node --test — parser/formatter/geometry unit tests
-npm run typecheck  # tsc --noEmit (incl. JSX types from @opentui/solid)
+```sh
+npm run typecheck
+npm test
 ```
 
-Source layout:
-
-- `src/tui.tsx` — TUI entry: widget Solid component (slot append
-  `prompt.footer.status`), `/usage` keymap command, shared fetch/state.
-- `src/index.ts` — server entry stub (package loading convention).
-- `src/usage.ts` — endpoint fetch, failure classification, single-flight.
-- `src/auth.ts` — API-key resolution from OpenCode's auth store.
-- `src/parser.ts` — dependency-free lenient parser + formatters (ported from
-  the pi extension sibling `pi-opencode-go-usage`, same contributor).
-- `src/snapshot.ts` / `src/ansi.ts` — gauge geometry + width math.
-- `src/cache.ts` — disk-cache schema helpers (kept from the port; the TUI
-  currently shares state in-process, no disk cache is written).
-- `test/` — unit tests (`node --test`, Node's native type stripping).
-
-The `src/tui.tsx` entry cannot be smoke-loaded under plain Node (never runs
-outside the OpenCode TUI's Bun runtime); it is validated with
-`tsc --noEmit` and the shared logic is unit-tested directly. Follow the
-manual test plan above for behavior in the real TUI.
-
-## Caveats
-
-- Field names of the usage endpoint are **not formally pinned**; the parser
-  degrades gracefully — worst case the widget shows `--` for a field.
-- The single-line gauge cell math is verified against OpenTUI's
-  width calculations for the ASCII/box-drawing glyphs used; if a future
-  font renders `│`/`═`/`─` wider than 1 cell, the layout could compress —
-  report it and it can fall back to `=`/`-`/`|`.
-- Slot path `prompt.footer.status` is documented plugin API but the host
-  layout around it may evolve; an additive `append` claim degrades to the
-  nearest surviving ancestor path if OpenCode renames it.
+`src/parser.ts`, `src/ansi.ts` and `src/snapshot.ts` are ported from the
+sibling pi extension; the layout logic is verbatim, with the accepted window
+type widened so provider adapters can feed it. Everything provider-specific
+lives in `src/providers/`.
 
 ## License
 

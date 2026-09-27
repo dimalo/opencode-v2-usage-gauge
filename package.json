@@ -1,14 +1,21 @@
 {
-  "name": "opencode-go-usage",
+  "name": "opencode-v2-usage-gauge",
   "version": "0.1.0",
-  "description": "OpenCode plugin: show OpenCode Go subscription usage in the TUI (prompt footer gauge + /usage command), only while an opencode-go model is active",
+  "description": "OpenCode 2 CLI plugin: an ASCII plan-usage gauge in the TUI prompt footer or sidebar, plus a /usage command. Zero config - reads credentials from OpenCode's own auth store. Ships with an OpenCode Go adapter; provider adapters are pluggable.",
   "type": "module",
   "license": "MIT",
   "keywords": [
     "opencode",
+    "opencode-v2",
+    "opencode-plugin",
+    "opencode-plugins",
     "opencode-go",
+    "cli-plugin",
+    "tui",
     "plugin",
     "usage",
+    "quota",
+    "gauge",
     "widget"
   ],
   "exports": {

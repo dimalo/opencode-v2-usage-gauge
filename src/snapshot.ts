@@ -16,7 +16,22 @@ import {
 } from "./parser.ts";
 import { visibleWidth } from "./ansi.ts";
 
-/** Data stored in each `opencode-go-usage-snapshot` custom entry. */
+/**
+ * Structural minimum the layout helpers need from a quota window.
+ *
+ * Identical to the ported `UsageWindowState` except that `key` may be any
+ * string (an adapter can normalize to its own window names) and the dollar
+ * fields are optional (not every billing API reports them). The logic below is
+ * the verbatim port; only the accepted input type was widened so provider
+ * adapters can feed it directly.
+ */
+export type WindowLike = Omit<UsageWindowState, "key" | "limitDollars" | "usageDollars"> & {
+	key: string;
+	limitDollars?: number;
+	usageDollars?: number;
+};
+
+/** Data stored in each plan-usage snapshot custom entry. */
 export interface SnapshotData {
 	/** Per-window numbers at fetch time (empty when `error` is set). */
 	windows: UsageWindowState[];
@@ -60,11 +75,11 @@ export interface WindowParts {
 	resetText: string;
 }
 
-export function windowParts(window: UsageWindowState, nowMs: number): WindowParts {
+export function windowParts(window: WindowLike, nowMs: number): WindowParts {
 	return {
 		pctText: window.usagePercent !== undefined ? formatPercent(window.usagePercent) : "--",
 		dollarsText:
-			window.usageDollars !== undefined
+			window.usageDollars !== undefined && window.limitDollars !== undefined
 				? `${formatDollars(window.usageDollars)}/${formatDollars(window.limitDollars)}`
 				: "",
 		resetText: window.resetsAtMs !== undefined ? formatResetDuration(window.resetsAtMs, nowMs) : "",
@@ -95,7 +110,7 @@ export function monthlyWidgetLabel(resetsAtMs: number | undefined, nowMs: number
 	return `${Math.max(1, days)}d`;
 }
 
-function widgetLabel(window: UsageWindowState, nowMs: number): string {
+function widgetLabel(window: WindowLike, nowMs: number): string {
 	switch (window.key) {
 		case "weekly":
 			return weeklyWidgetLabel(window.resetsAtMs);
@@ -192,7 +207,7 @@ export function gaugeGeometry(
  * MIN_GAUGE_WIDTH, 3) the caller falls back to truncateToWidth.
  */
 export function layoutWidgetLine(
-	windows: UsageWindowState[],
+	windows: WindowLike[],
 	nowMs: number,
 	width: number,
 	showCountdown = true,

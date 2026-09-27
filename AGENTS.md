@@ -1,21 +1,36 @@
-# opencode-go-usage
+# opencode-v2-usage-gauge
 
-OpenCode V2 CLI plugin: OpenCode Go usage widget in the prompt footer plus a
-/usage slash command. Ported from the sibling pi extension
-`../pi-opencode-go-usage` (same data source, same pure-ASCII gauge style).
+OpenCode **V2** CLI (TUI) plugin: an ASCII plan-usage gauge in the prompt
+footer or session sidebar, plus a `/usage` command. Ported from the sibling pi
+extension `../pi-opencode-go-usage` (same data source, same pure-ASCII gauge
+style).
+
+V2-only by design: the plugin API, the slot tree and `cli.json` are all V2.
+OpenCode 1 does not load V2 plugins.
 
 ## Layout
 
+- `src/providers/types.ts` — the adapter contract (`PlanUsageAdapter`,
+  `Credential` union, `PlanUsage`/`PlanWindow`, `PlanOutcome`). This is the
+  extension seam: one file per provider, nothing else changes.
+- `src/providers/go.ts` — OpenCode Go adapter (endpoint, credential, parse).
+  Future adapters (Zen, Copilot, Kiro) go beside it.
+- `src/registry.ts` — the one place adapters are registered and enabled.
+- `src/usage.ts` — provider-agnostic plumbing: credential resolution,
+  single-flight fetch, 5 min TTL, last-good snapshot retention.
+- `src/tui.tsx` — the only OpenCode-specific module (Solid JSX, slot claims,
+  keymap layer, per-provider shared state).
+- `src/auth.ts` — API-key lookup in OpenCode's auth store, by provider id.
 - `src/parser.ts` is **copied verbatim** from the pi extension — do not edit
   here; its unit tests live in `test/` (also carried over verbatim). If the
-  upstream pi extension changes the parser, copy it again.
+  upstream pi extension changes the parser, copy it again. The Go adapter
+  imports it and normalizes the result into `PlanUsage`.
 - `src/ansi.ts`/`src/snapshot.ts` likewise come from the pi extension;
-  rendering differs only in that spans are structured (`GaugeSpan`) instead
-  of ANSI-painted strings, because the OpenTUI JSX applies theme tokens.
-- `src/tui.tsx` is the only OpenCode-specific module (Solid JSX, keymap layer,
-  auth-key read, shared fetch/state).
-- `src/auth.ts` reads the API key from OpenCode's auth store; the key must
-  never be logged or persisted.
+  rendering differs only in that spans are structured (`GaugeSpan`) instead of
+  ANSI-painted strings, because the OpenTUI JSX applies theme tokens. The
+  layout logic is verbatim; only the accepted input type was widened
+  (`WindowLike`) so any adapter's windows can feed it.
+- `src/cache.ts`/`src/config.ts` are ours.
 
 ## Loader contract (verified on v2.0.18)
 
@@ -41,6 +56,7 @@ plugin in both files double-loads the TUI entry and duplicates slot claims.
 - TypeScript, no build step; OpenCode loads TS/TSX directly (Bun).
 - Zero runtime dependencies; `@opencode/plugin` is resolved by the host.
 - Missing/renamed endpoint fields degrade to `--`/omitted, never throw.
+- Adapters never log, print or persist credentials.
 
 ## Verify
 
@@ -52,8 +68,9 @@ npm test
 Live smoke (real key in the auth store):
 
 ```sh
-node --input-type=module -e "import { fetchFromAuthStore } from './src/usage.ts';
-const outcome = await fetchFromAuthStore({value: undefined});
+node --input-type=module -e "import { createPlanSource } from './src/usage.ts';
+import { GO_ADAPTER } from './src/providers/go.ts';
+const outcome = await createPlanSource(GO_ADAPTER).fetch();
 console.log(outcome.ok ? outcome.data.windows : outcome)"
 ```
 

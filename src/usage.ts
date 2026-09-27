@@ -1,83 +1,82 @@
 /**
- * Fetch + apply logic for the OpenCode Go usage endpoint, shared by the TUI
- * widget and the /usage slash command. Mirrors the pi extension's behavior:
- * single-flight fetches, ~5 min cache TTL, stale-data fallback on transient
- * failures, and silent degradation (never crash, never leak the key).
+ * Fetch + apply plumbing shared by every provider adapter.
+ *
+ * This layer knows nothing about any specific billing API: it resolves the
+ * adapter's credential, calls the adapter once at a time (single-flight),
+ * caches the result for `CACHE_TTL_MS`, and keeps the last good snapshot when
+ * a refresh fails transiently. Provider specifics live in `src/providers/`.
+ *
+ * Mirrors the pi extension's behavior: ~5 min cache TTL, stale-data fallback,
+ * and silent degradation (never crash, never leak a credential).
  */
 
-import type { ParsedUsage } from "./parser.ts";
-import { parseUsageResponse } from "./parser.ts";
-import { readApiKeyFromAuthStore } from "./auth.ts";
+import type { PlanOutcome, PlanUsageAdapter } from "./providers/types.ts";
 
-export const USAGE_ENDPOINT = "https://opencode.ai/zen/go/v1/usage";
-/** Provider that gates widget visibility; also the provider /usage always queries. */
-export const TARGET_PROVIDER = "opencode-go";
-/** Re-fetch the widget at most every 5 minutes (the /usage command always fetches fresh). */
+/** Re-fetch at most every 5 minutes (the /usage command always fetches fresh). */
 export const CACHE_TTL_MS = 5 * 60 * 1000;
-export const REQUEST_TIMEOUT_MS = 10_000;
 /** Tick cadence: minute-granularity countdown re-render + TTL-gated refresh check. */
 export const WIDGET_TICK_MS = 60_000;
 
 /** Why a fetch did not produce usable data (drives widget vs. command behavior). */
-export type FetchFailureKind = "no-key" | "unauthorized" | "transient" | "payload";
+export type FetchFailureKind = "no-credential" | "unauthorized" | "transient" | "payload";
 
-export type FetchOutcome =
-	| { ok: true; data: ParsedUsage }
-	| { ok: false; kind: FetchFailureKind; error: string };
+export type FetchOutcome = PlanOutcome;
 
-export async function fetchGoUsage(apiKey: string): Promise<FetchOutcome> {
-	let res: Response;
-	try {
-		res = await fetch(USAGE_ENDPOINT, {
-			headers: { Authorization: `Bearer ${apiKey}` },
-			signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
+/** One adapter's shared fetch state: in-flight promise + last good result. */
+export interface PlanSource {
+	readonly adapter: PlanUsageAdapter;
+	/** Fetch through the adapter, sharing any in-flight request. */
+	fetch(): Promise<FetchOutcome>;
+	/** Epoch ms of the last successful fetch, or undefined. */
+	fetchedAtMs(): number | undefined;
+	/** Last successful snapshot, or undefined. */
+	snapshot(): PlanOutcome & { ok: true } | undefined;
+}
+
+/** Create the shared, single-flight source for one adapter. */
+export function createPlanSource(adapter: PlanUsageAdapter): PlanSource {
+	const inflight: { value: Promise<FetchOutcome> | undefined } = { value: undefined };
+	let lastGood: (PlanOutcome & { ok: true }) | undefined;
+
+	const run = async (): Promise<FetchOutcome> => {
+		if (inflight.value !== undefined) return inflight.value;
+		inflight.value = (async () => {
+			// A credential lookup can throw (unreadable store, exotic provider);
+			// that is a missing credential, not a crash.
+			let credential;
+			try {
+				credential = await adapter.credential();
+			} catch {
+				credential = undefined;
+			}
+			if (credential === undefined) {
+				return {
+					ok: false,
+					kind: "no-credential",
+					error: `No credentials configured for provider "${adapter.id}".`,
+				} as const;
+			}
+			try {
+				const outcome = await adapter.fetch(credential);
+				if (outcome.ok) lastGood = outcome;
+				return outcome;
+			} catch {
+				return {
+					ok: false,
+					kind: "transient",
+					error: `${adapter.label} usage request failed.`,
+				} as const;
+			}
+		})().finally(() => {
+			inflight.value = undefined;
 		});
-	} catch {
-		return { ok: false, kind: "transient", error: "Usage request failed (network error or timeout)." };
-	}
+		return inflight.value;
+	};
 
-	if (res.status === 401) {
-		return { ok: false, kind: "unauthorized", error: "Plan/key rejected (HTTP 401) for opencode-go." };
-	}
-	if (!res.ok) {
-		return { ok: false, kind: "transient", error: `Usage endpoint returned HTTP ${res.status}.` };
-	}
-
-	let json: unknown;
-	try {
-		json = await res.json();
-	} catch {
-		return { ok: false, kind: "payload", error: "Usage response was not valid JSON." };
-	}
-
-	const data = parseUsageResponse(json);
-	if (!data.valid || data.windows.length === 0) {
-		return { ok: false, kind: "payload", error: "Usage response contained no recognizable window data." };
-	}
-	return { ok: true, data };
-}
-
-/** HTTP-level single-flight: any caller shares the in-progress fetch. */
-export function guardedFetch(
-	getApiKey: () => Promise<string | undefined>,
-	inflight: { value: Promise<FetchOutcome> | undefined },
-): Promise<FetchOutcome> {
-	if (inflight.value === undefined) {
-		inflight.value = getApiKey()
-			.then((key) => {
-				if (!key) {
-					return { ok: false, kind: "no-key", error: 'No API key configured for provider "opencode-go".' } as const;
-				}
-				return fetchGoUsage(key);
-			})
-			.finally(() => {
-				inflight.value = undefined;
-			});
-	}
-	return inflight.value;
-}
-
-/** Convenience: key from OpenCode's local auth store. */
-export function fetchFromAuthStore(inflight: { value: Promise<FetchOutcome> | undefined }): Promise<FetchOutcome> {
-	return guardedFetch(async () => readApiKeyFromAuthStore(), inflight);
+	return {
+		adapter,
+		fetch: run,
+		fetchedAtMs: () => lastGood?.data.fetchedMs,
+		snapshot: () => lastGood,
+	};
 }

@@ -1,17 +1,16 @@
 /**
- * OpenCode Go API-key resolution for the plugin.
+ * API-key resolution from OpenCode's own auth store, for any provider id.
  *
- * Key sources (tried in order, first non-empty wins):
- *   1. OpenCode's own auth store — `{...,"opencode-go":{"type":"api","key":"..."}}`
- *      at `$OPENCODE_DATA_DIR/auth.json`, `$XDG_DATA_HOME/opencode/auth.json`, or
- *      `~/.local/share/opencode/auth.json` (verified live on 2026-09-27).
- *   2. Server-side integration connection (server plugin context only):
- *      `ctx.integration.connection.active("opencode-go")` → `resolve()` →
- *      `Credential.Value` with `type: "key"` and a `key` field.
+ * Key source (first non-empty wins): the provider entry
+ * `{...,"<providerID>":{"type":"api","key":"..."}}` at
+ * `$OPENCODE_DATA_DIR/auth.json`, `$XDG_DATA_HOME/opencode/auth.json`, or
+ * `~/.local/share/opencode/auth.json` (verified live on 2026-09-27).
+ *
+ * A server-side integration connection lookup is also exposed for the server
+ * entry: `ctx.integration.connection.active(providerID)` then `resolve()`.
  *
  * The key is never logged, printed, or written to any file by this plugin.
  */
-
 import { homedir } from "node:os";
 import { join } from "node:path";
 import { readFileSync } from "node:fs";
@@ -29,13 +28,16 @@ function authStoreCandidates(): string[] {
 	return candidates;
 }
 
-/** Lenient auth.json reader; the API key for `opencode-go` or undefined. */
-export function readApiKeyFromAuthStore(): string | undefined {
+/**
+ * Lenient auth.json reader; the API key stored for `providerID`, or
+ * undefined when the user has not connected that provider.
+ */
+export function readApiKeyFromAuthStore(providerID: string): string | undefined {
 	for (const path of authStoreCandidates()) {
 		try {
 			const parsed = safeParse(readFileSync(path, "utf8"));
 			if (!isRecord(parsed)) continue;
-			const key = extractKey(parsed["opencode-go"]);
+			const key = extractKey(parsed[providerID]);
 			if (key !== undefined) return key;
 		} catch {
 			// Missing/unreadable store → try the next candidate.
@@ -72,7 +74,7 @@ function extractKey(entry: unknown): string | undefined {
 /**
  * Resolve the key through the server plugin's integration connection
  * (credential store, remote-safe). Returns undefined when OpenCode has no
- * key-method credential for opencode-go.
+ * key-method credential for `integrationID`.
  */
 export async function apiKeyFromIntegration(ctx: {
 	integration: {
@@ -84,7 +86,7 @@ export async function apiKeyFromIntegration(ctx: {
 	integrationID?: string;
 }): Promise<string | undefined> {
 	try {
-		const connection = await ctx.integration.connection.active("opencode-go");
+		const connection = await ctx.integration.connection.active(ctx.integrationID ?? "opencode-go");
 		if (connection === undefined) return undefined;
 		const credential = await ctx.integration.connection.resolve(connection);
 		if (credential === undefined) return undefined;
