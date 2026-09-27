@@ -1,0 +1,48 @@
+version: 2
+
+updates:
+  # Runtime and dev dependencies live in the single root package.json.
+  - package-ecosystem: npm
+    directory: "/"
+    schedule:
+      interval: weekly
+      day: monday
+      time: "07:00"
+      timezone: Etc/UTC
+    open-pull-requests-limit: 5
+    labels:
+      - dependencies
+      - automerge
+    commit-message:
+      prefix: "chore(deps)"
+    groups:
+      # The dev toolchain (TypeScript, OpenTUI, Solid, Node types) moves
+      # together; one PR is easier to review than six.
+      dev-toolchain:
+        applies-to: version-updates
+        dependency-type: development
+        patterns:
+          - "@opentui/*"
+          - "@opencode/*"
+          - "typescript"
+          - "solid-js"
+          - "@types/*"
+        update-types:
+          - minor
+          - patch
+
+  # GitHub Actions workflows are pinned by tag; keep them current too, since
+  # the plugin's loader contract is verified against specific host versions.
+  - package-ecosystem: github-actions
+    directory: "/"
+    schedule:
+      interval: monthly
+    labels:
+      - dependencies
+      - automerge
+    commit-message:
+      prefix: "chore(ci)"
+    groups:
+      actions:
+        patterns:
+          - "*"

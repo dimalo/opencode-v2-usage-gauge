@@ -7,18 +7,20 @@ on:
 
 jobs:
   check:
+    name: Type check and unit tests
     runs-on: ubuntu-latest
-    strategy:
-      matrix:
-        # The plugin ships TypeScript that the host runs directly (Bun), and the
-        # unit tests only use the Node test runner, so both are exercised.
-        node: ["22"]
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
-          node-version: ${{ matrix.node }}
+          # The plugin ships TypeScript that the host runs directly (Bun); the
+          # tests use the Node test runner, so both are exercised here.
+          node-version: "22"
           cache: npm
       - run: npm ci
-      - run: npm run typecheck
-      - run: npm test
+      # There is no build step (no bundler, no emitted output), so the compile
+      # check is tsc over the whole program, including the .tsx TUI entry.
+      - name: Compile (type check)
+        run: npm run compile
+      - name: Unit tests
+        run: npm test

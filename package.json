@@ -34,7 +34,9 @@
   },
   "scripts": {
     "typecheck": "tsc --noEmit",
-    "test": "node --test test/*.test.ts"
+    "compile": "tsc --noEmit",
+    "test": "node --test test/*.test.ts",
+    "verify": "npm run typecheck && npm test"
   },
   "dependencies": {
     "@opencode/plugin": "latest"
