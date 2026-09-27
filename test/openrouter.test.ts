@@ -118,12 +118,30 @@ test("an undocumented cadence string gets its own label, not \"5h\"", async () =
 	assert.equal(layout.segments[0]?.label, "cap");
 });
 
-test("limit null (the default) yields no window and an explanatory note", async () => {
+test("limit null (the default) yields no window, a lifetime spend figure, and a note", async () => {
 	const data = await fetchWith(keyPayload({ limit: null, limit_remaining: null, limit_reset: null }));
 	assert.deepEqual(data.windows, [], "no denominator → no bar may be drawn");
 	assert.equal(data.note, NO_KEY_LIMIT_NOTE);
+	assert.deepEqual(
+		data.spend,
+		{ amount: 25.5, currency: "USD", scope: "key" },
+		"the key's lifetime usage is a real number, shown without a bar",
+	);
 	assert.equal(joinSnapshotLines([], data.note), NO_KEY_LIMIT_NOTE, "/usage must not be blank");
 	assert.equal(layoutWidgetLine(data.windows, Date.now(), 80).segments.length, 0);
+});
+
+test("no usage field → no spend figure (a missing number is absent, not zero)", async () => {
+	const data = await fetchWith(keyPayload({ limit: null, limit_remaining: null, usage: null }));
+	assert.deepEqual(data.windows, []);
+	assert.equal(data.spend, undefined);
+	assert.equal(data.note, NO_KEY_LIMIT_NOTE);
+});
+
+test("a capped key carries no separate spend line (the window already has the dollars)", async () => {
+	const data = await fetchWith(keyPayload({ limit: 100, limit_remaining: 74.5, limit_reset: "monthly" }));
+	assert.equal(data.windows.length, 1);
+	assert.equal(data.spend, undefined);
 });
 
 test("limit 0 is treated as no cap, never as a denominator", async () => {

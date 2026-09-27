@@ -96,8 +96,8 @@ width math, the sidebar layout, the dialog — is provider-agnostic.
 | `openrouter`    | per-key credit cap (daily / weekly / monthly, **opt-in**) | key from OpenCode's auth store | shipped |
 
 `openrouter` is **not** in the default `providers` list: most OpenRouter keys
-have no per-key credit limit, so for those users the adapter has nothing to show
-and would only cost a request. Opt in with `"providers": "all"` or
+have no per-key credit limit, so for those users there is no bar to draw and the
+adapter would only cost a request. Opt in with `"providers": "all"` or
 `"providers": ["opencode-go", "openrouter"]`.
 
 ### OpenRouter: a per-key cap, and only that
@@ -109,10 +109,12 @@ cadence. With `limit > 0` that maps exactly onto the existing window contract �
 
 Three things it deliberately does not do:
 
-- **Without a per-key credit limit, nothing is shown.** `limit` is `null` for
-  most keys, and there is no denominator — so no bar is drawn, and `/usage`
-  says why instead of showing a blank dialog. (Whether the plugin should tell
-  you to go set a limit is still an open question; it does not yet.)
+- **Without a per-key credit limit there is no bar** — `limit` is `null` for
+  most keys, and a bar without a denominator would be a lie. Instead the key's
+  lifetime `usage` is shown as a measured amount (`spent $17.10 USD · this key`),
+  and `/usage` explains why there is no bar. A number is never invented, and a
+  percentage is never derived from a total. (Whether the plugin should tell you
+  to go set a limit is still an open question; it does not yet.)
 - **`balance` is never filled.** The account's credit balance is not exposed by
   any endpoint reachable with a normal API key.
 - **`/api/v1/credits` is deliberately not used.** It returns two *cumulative*

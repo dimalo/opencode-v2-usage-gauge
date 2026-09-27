@@ -185,6 +185,7 @@ test("toPlanSpend normalizes to the snapshot shape (Zen bills in USD)", () => {
 	assert.equal(toPlanSpend({ amount: 1, messageCount: 1, sessionCount: 1 }, "account").scope, "account");
 	assert.equal(spendScopeLabel("session"), "session");
 	assert.equal(spendScopeLabel("account"), "account");
+	assert.equal(spendScopeLabel("key"), "this key");
 });
 
 test("spend text: compact widget body, detail text for the sidebar/dialog", () => {
@@ -220,6 +221,12 @@ test("hasRenderableData: a note is not a number", () => {
 	assert.equal(hasRenderableData({ ...payAsYouGo, windows: [{ key: "rolling", label: "5h" }] }), true);
 	assert.equal(
 		hasRenderableData({ ...payAsYouGo, balance: { remaining: 1, currency: "USD" } }),
+		true,
+	);
+	// A directly reported spend amount (OpenRouter's key lifetime usage) is a
+	// real number, so it counts even with no windows and no balance.
+	assert.equal(
+		hasRenderableData({ ...payAsYouGo, spend: { amount: 17.1, currency: "USD", scope: "key" } }),
 		true,
 	);
 });

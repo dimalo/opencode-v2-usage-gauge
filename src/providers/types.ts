@@ -60,9 +60,10 @@ export interface PlanWindow {
 /**
  * What a spend figure is measured over. `"session"` is the session plus its
  * subagent family; `"account"` would need history the local data layer does not
- * expose yet.
+ * expose yet; `"key"` is a provider key's own lifetime total, which a billing
+ * API can report directly (OpenRouter's `usage`) without any local history.
  */
-export type SpendScope = "session" | "account";
+export type SpendScope = "session" | "account" | "key";
 
 /**
  * Consumption over a scope — the *delta*, which is a different question from
@@ -97,10 +98,12 @@ export interface PlanUsage {
 	/** Remaining credit; absent for pure subscription providers. */
 	balance?: PlanBalance;
 	/**
-	 * Consumption over a scope; see `PlanSpend`. Reserved for pay-as-you-go
-	 * providers: the local meter in `src/spend.ts` can produce it, but no
-	 * registered adapter does yet (OpenCode Zen's balance has no API — see
-	 * anomalyco/opencode#44189), so nothing renders it today.
+	 * Consumption over a scope; see `PlanSpend`. A pay-as-you-go provider with
+	 * no readable budget can still report a real consumed amount: OpenRouter
+	 * sets it from the key's lifetime `usage` (`scope: "key"`), which is why a
+	 * no-cap key shows a figure instead of nothing. The local meter in
+	 * `src/spend.ts` can also produce it, but no adapter consumes that yet
+	 * (OpenCode Zen's balance has no API — see anomalyco/opencode#44189).
 	 */
 	spend?: PlanSpend;
 	/**

@@ -15,7 +15,10 @@
  *     `limit - limit_remaining` of `limit`.
  *   - With `limit` null — the default for most keys — there is no denominator.
  *     A bar without a denominator is a lie, so the snapshot carries NO window
- *     and a `note` instead: the gauge stays empty and `/usage` explains why.
+ *     and a `note` instead. The key's lifetime `usage` is still a real number,
+ *     so it is shown as a measured amount (`spend`, `scope: "key"`) rather than
+ *     nothing: the gauge reads `spent $17.10 USD · this key` and `/usage`
+ *     explains why there is no bar.
  *   - The **account** credit balance is not exposed by any endpoint, so
  *     `PlanUsage.balance` is never filled. `/api/v1/credits` returns two
  *     CUMULATIVE lifetime counters (`total_credits`, `total_usage`); a balance
@@ -37,7 +40,14 @@
  */
 
 import { readApiKeyFromAuthStore } from "../auth.ts";
-import type { Credential, PlanOutcome, PlanUsage, PlanUsageAdapter, PlanWindow } from "./types.ts";
+import type {
+	Credential,
+	PlanOutcome,
+	PlanSpend,
+	PlanUsage,
+	PlanUsageAdapter,
+	PlanWindow,
+} from "./types.ts";
 
 export const OPENROUTER_PROVIDER_ID = "openrouter";
 export const OPENROUTER_ENDPOINT = "https://openrouter.ai/api/v1/key";
@@ -109,6 +119,11 @@ export const OPENROUTER_ADAPTER: PlanUsageAdapter = {
 			// credential — never surface it. (Test fixtures use an obviously
 			// fake sentinel, never a fragment copied from a live response.)
 			windows: window === undefined ? [] : [window],
+			// No cap → no bar, but the key's lifetime usage is still a real
+			// number the API reports, so show it as a measured amount (never a
+			// percentage). With a cap the window already carries the dollars,
+			// so a second spend line would be redundant.
+			spend: window === undefined ? lifetimeSpend(data) : undefined,
 			note: window === undefined ? NO_KEY_LIMIT_NOTE : undefined,
 			fetchedMs: nowMs,
 			valid: true,
@@ -144,6 +159,19 @@ function parseCap(data: Record<string, unknown>): PlanWindow | undefined {
 		// Deliberately undefined: the reset instant is not documented.
 		resetsAtMs: undefined,
 	};
+}
+
+/**
+ * The key's lifetime usage in USD, when the API reports a finite number.
+ *
+ * `usage` is the key's cumulative spend — a real, directly reported number, so
+ * it is shown as a measured amount with `scope: "key"`. It is NOT a budget and
+ * NOT a percentage: there is no denominator, so no bar may be drawn from it.
+ */
+function lifetimeSpend(data: Record<string, unknown>): PlanSpend | undefined {
+	const usage = finite(data.usage);
+	if (usage === undefined || usage < 0) return undefined;
+	return { amount: usage, currency: "USD", scope: "key" };
 }
 
 /** A finite number, or undefined for null/missing/NaN/±Infinity/garbage. */

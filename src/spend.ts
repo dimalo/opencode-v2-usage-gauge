@@ -121,11 +121,11 @@ export function computeSessionSpend(
  *
  * The multi-line layout uses this to stay silent instead of printing a bare
  * section title for a provider that reported nothing (a Zen session with no
- * assistant message yet, say). `note` never counts: it explains, it does not
- * measure.
+ * assistant message yet, say). A `spend` amount counts: it is a real measured
+ * number. `note` never counts: it explains, it does not measure.
  */
 export function hasRenderableData(data: PlanUsage): boolean {
-	return data.windows.length > 0 || data.balance !== undefined;
+	return data.windows.length > 0 || data.balance !== undefined || data.spend !== undefined;
 }
 
 /** Build the `PlanSpend` shape the snapshot carries (Zen bills in USD). */
@@ -135,7 +135,9 @@ export function toPlanSpend(spend: SessionSpend, scope: SpendScope = "session"):
 
 /** Human label for a scope, used in the dialog and the sidebar. */
 export function spendScopeLabel(scope: SpendScope): string {
-	return scope === "account" ? "account" : "session";
+	if (scope === "account") return "account";
+	if (scope === "key") return "this key";
+	return "session";
 }
 
 /** The measured part of a spend-only widget line (the TUI colors it). */

@@ -35,6 +35,7 @@ import {
 	windowParts,
 	type WidgetSegment,
 } from "./snapshot.ts";
+import { spendAmountText, spendDetailText, spendWidgetBody, spendWidgetLine } from "./spend.ts";
 
 // ------------------------------------------------------------------ helpers
 
@@ -241,6 +242,25 @@ function UsageGauge(props: { config: GaugeConfig; adapters: PlanUsageAdapter[] }
 			props.config.maxWidth > 0
 				? Math.min(full, props.config.maxWidth)
 				: Math.max(48, Math.min(full, Math.floor(full / 2)));
+		// No quota windows: a spend-only provider (OpenRouter with no per-key
+		// cap) shows its measured amount, never a bar. If it does not fit the
+		// shared footer row, show nothing rather than wrap — and if there is no
+		// number at all, hide entirely instead of leaving a dangling prefix.
+		if (current.data.windows.length === 0) {
+			const spent = current.data.spend;
+			if (spent === undefined || spendWidgetLine(spent, prefix(), budget) === undefined) {
+				return null;
+			}
+			return (
+				<text>
+					<span style={{ fg: color("dim") }}>{prefix()}</span>
+					<span style={{ fg: color("base") }}>{spendWidgetBody(spent)}</span>
+					<Show when={current.stale}>
+						<span style={{ fg: color("warning") }}> (stale)</span>
+					</Show>
+				</text>
+			);
+		}
 		// The provider tag is measured, not assumed: "Go " is 3 cells, "Zen "
 		// would be 4, and a wrong guess silently steals track width.
 		const layout = layoutWidgetLine(
@@ -325,10 +345,18 @@ function UsageGauge(props: { config: GaugeConfig; adapters: PlanUsageAdapter[] }
 				</text>,
 			);
 		}
-		// No windows and no balance (e.g. OpenRouter without a per-key credit
-		// cap): there is no denominator, so no bar — say why instead of showing
-		// a bare title.
-		if (current.data.windows.length === 0 && current.data.balance === undefined) {
+		if (current.data.spend !== undefined) {
+			lines.push(
+				<text>
+					<span style={{ fg: color("dim") }}>spent </span>
+					<span style={{ fg: color("base") }}>{spendAmountText(current.data.spend)}</span>
+				</text>,
+			);
+		}
+		// No bar (no windows) → say why, so the section is never just a title.
+		// A spend figure does not explain a missing denominator, so the note
+		// still renders alongside it.
+		if (current.data.windows.length === 0) {
 			lines.push(<text>{joinSnapshotLines([], current.data.note)}</text>);
 		}
 		return lines as never[];
@@ -405,8 +433,15 @@ function formatSnapshotText(data: PlanUsage, showCountdown: boolean): string {
 	if (data.balance !== undefined) {
 		lines.push(`balance ${data.balance.remaining.toFixed(2)} ${data.balance.currency}`);
 	}
-	// A provider with neither windows nor balance (OpenRouter with no per-key
-	// cap) must not open a blank dialog: fall back to the adapter's note.
+	if (data.spend !== undefined) {
+		lines.push(spendDetailText(data.spend));
+	}
+	// No bar (no windows) → say why, alongside any spend figure. A provider
+	// with neither windows nor balance (OpenRouter with no per-key cap) must
+	// not open a blank dialog: fall back to the adapter's note.
+	if (data.windows.length === 0 && data.note !== undefined) {
+		lines.push(data.note);
+	}
 	return joinSnapshotLines(lines, data.note);
 }
 
