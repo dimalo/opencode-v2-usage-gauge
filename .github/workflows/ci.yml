@@ -10,8 +10,8 @@ jobs:
     name: Type check and unit tests
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
         with:
           # The plugin ships TypeScript that the host runs directly (Bun); the
           # tests use the Node test runner, so both are exercised here.
