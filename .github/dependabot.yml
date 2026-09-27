@@ -14,6 +14,13 @@ updates:
       - dependencies
     commit-message:
       prefix: "chore(deps)"
+    ignore:
+      # @opentui/solid declares `peer solid-js@1.9.12` (an exact pin, not a
+      # range), so solid-js cannot float on its own: bumping it makes `npm ci`
+      # fail with ERESOLVE. It moves only when @opentui/solid moves, which the
+      # group below already covers.
+      - dependency-name: "solid-js"
+        versions: [">=1.9.13"]
     groups:
       # The dev toolchain (TypeScript, OpenTUI, Solid, Node types) moves
       # together; one PR is easier to review than six. No `applies-to` here on
