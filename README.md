@@ -23,7 +23,7 @@ you install it.
 - **Zero configuration** — no cookie, no workspace id, no config file, no secrets in your config.
 - **Always visible, zero context cost** — one ASCII line appended to the prompt footer row. It never enters the conversation, so it can't pollute the model's context.
 - **Follows your model** — the gauge tracks whichever provider the selected model belongs to.
-- **Pluggable providers** — each billing API is a small adapter that normalizes to one shape. OpenCode Go ships today; OpenCode Zen, GitHub Copilot, Kiro and others are additive.
+- **Pluggable providers** — each billing API is a small adapter that normalizes to one shape. OpenCode Go ships today, plus an opt-in OpenRouter per-key-cap adapter; OpenCode Zen, GitHub Copilot, Kiro and others are additive.
 - **No dependencies, no build step** — TypeScript loaded directly by the host. 79 unit tests.
 
 ## Install
@@ -80,7 +80,7 @@ instances — the TUI entry loads per TUI process).
 | `showCountdown` | `true` \| `false`                             | `true`           | Show reset countdowns (⟳ on the line; `reset …` in multi/dialog) |
 | `placement`     | `"promptFooter"` \| `"sidebar"` \| `"both"`   | `"promptFooter"` | Claim the prompt footer row, the session sidebar, or both. `sidebar` renders the multi-line variant |
 | `maxWidth`      | number of cells                               | `0` (auto)       | Cell budget for the single line. `0` = at most half the row (min 48), because the footer row is shared with the built-in cost/hint items |
-| `providers`     | `"all"` or a list of adapter ids              | `["opencode-go"]` | Which providers the gauge tracks. The gauge follows the selected model, so this is a filter on top of "provider has an adapter" |
+| `providers`     | `"all"` or a list of adapter ids              | `["opencode-go"]` | Which providers the gauge tracks. The gauge follows the selected model, so this is a filter on top of "provider has an adapter". `openrouter` is opt-in — add it to the list or use `"all"` |
 
 The options hold **no secrets** — credentials stay in OpenCode's auth store.
 
@@ -93,6 +93,38 @@ width math, the sidebar layout, the dialog — is provider-agnostic.
 | Adapter id      | Plan            | Credential                              | Status |
 | --------------- | --------------- | --------------------------------------- | ------ |
 | `opencode-go`   | rolling / weekly / monthly windows | key from OpenCode's auth store | shipped |
+| `openrouter`    | per-key credit cap (daily / weekly / monthly, **opt-in**) | key from OpenCode's auth store | shipped |
+
+`openrouter` is **not** in the default `providers` list: most OpenRouter keys
+have no per-key credit limit, so for those users the adapter has nothing to show
+and would only cost a request. Opt in with `"providers": "all"` or
+`"providers": ["opencode-go", "openrouter"]`.
+
+### OpenRouter: a per-key cap, and only that
+
+The OpenRouter gauge is built from `GET /api/v1/key`, which reports the
+**per-key spending cap**: `limit`, `limit_remaining` and the `limit_reset`
+cadence. With `limit > 0` that maps exactly onto the existing window contract —
+`88%` of `$100` drawn as a bar, labelled by cadence (`day` / `wk` / `mo`).
+
+Three things it deliberately does not do:
+
+- **Without a per-key credit limit, nothing is shown.** `limit` is `null` for
+  most keys, and there is no denominator — so no bar is drawn, and `/usage`
+  says why instead of showing a blank dialog. (Whether the plugin should tell
+  you to go set a limit is still an open question; it does not yet.)
+- **`balance` is never filled.** The account's credit balance is not exposed by
+  any endpoint reachable with a normal API key.
+- **`/api/v1/credits` is deliberately not used.** It returns two *cumulative*
+  lifetime counters (`total_credits`, `total_usage`). A "remaining balance"
+  derived from those breaks on refunds, negative carryover and fee divergence,
+  and the docs page's own nav title contradicts its schema. Several popular
+  projects derive one anyway, and are wrong.
+
+Also note: `limit_reset` is a cadence, not a timestamp, and OpenRouter does not
+document the instant at which the cap resets — so no reset countdown is shown
+rather than an invented one. The deprecated `rate_limit` object is ignored.
+
 
 ### Not yet: OpenCode Zen
 

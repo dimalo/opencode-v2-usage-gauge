@@ -86,6 +86,20 @@ export function windowParts(window: WindowLike, nowMs: number): WindowParts {
 	};
 }
 
+/**
+ * Join the snapshot's rendered lines, and never produce an empty body.
+ *
+ * A provider can legitimately have neither windows nor balance — OpenRouter
+ * without a per-key credit cap has no denominator, so no bar may be drawn. A
+ * blank `/usage` dialog then reads as a broken plugin, so fall back to the
+ * adapter's `note`, which explains what the API did not report and can never
+ * stand in for a number.
+ */
+export function joinSnapshotLines(lines: string[], note: string | undefined): string {
+	if (lines.length > 0) return lines.join("\n");
+	return note !== undefined && note !== "" ? note : "no usage data reported.";
+}
+
 // ------------------------------------------------------------- single line
 
 /**
@@ -112,12 +126,18 @@ export function monthlyWidgetLabel(resetsAtMs: number | undefined, nowMs: number
 
 function widgetLabel(window: WindowLike, nowMs: number): string {
 	switch (window.key) {
+		case "rolling":
+			return "5h";
 		case "weekly":
 			return weeklyWidgetLabel(window.resetsAtMs);
 		case "monthly":
 			return monthlyWidgetLabel(window.resetsAtMs, nowMs);
 		default:
-			return "5h"; // rolling
+			// An adapter's own window (e.g. OpenRouter's daily per-key credit
+			// cap) carries its own short label. "5h" would be a lie for anything
+			// that is not a rolling five-hour window, and the three canonical
+			// keys above are unchanged.
+			return window.label;
 	}
 }
 

@@ -7,10 +7,11 @@
  */
 
 import { GO_ADAPTER } from "./providers/go.ts";
+import { OPENROUTER_ADAPTER } from "./providers/openrouter.ts";
 import type { PlanUsageAdapter } from "./providers/types.ts";
 
 /** Every adapter shipped with the plugin, in display order. */
-export const ADAPTERS: readonly PlanUsageAdapter[] = [GO_ADAPTER];
+export const ADAPTERS: readonly PlanUsageAdapter[] = [GO_ADAPTER, OPENROUTER_ADAPTER];
 
 /** Adapter ids in display order (used by config parsing and docs). */
 export const ADAPTER_IDS: readonly string[] = ADAPTERS.map((adapter) => adapter.id);

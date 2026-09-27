@@ -84,6 +84,11 @@ Guidelines for adapters:
 - **Never log, print or persist a credential.** Not in an error message, not in
   a debug line, not in a cache file. If a payload surprises you, report the
   shape (which keys, which types), never the values.
+- **Test fixtures must be synthetic.** Copying a value — even a fragment, even
+  an ellipsised prefix/suffix — out of a live API response into a fixture is a
+  credential leak, and it is the easiest mistake to make in this repo because
+  fixtures are supposed to be "recorded". Invent the values; a real prefix and
+  suffix are still a real key in two halves.
 
 ## Coding conventions
 

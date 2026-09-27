@@ -27,7 +27,14 @@ import { parseConfig, type GaugeConfig } from "./config.ts";
 import type { PlanUsage, PlanUsageAdapter } from "./providers/types.ts";
 import { CACHE_TTL_MS, WIDGET_TICK_MS, createPlanSource, type PlanSource } from "./usage.ts";
 import { adapterForProvider, resolveAdapters } from "./registry.ts";
-import { barCells, barColorName, layoutWidgetLine, windowParts, type WidgetSegment } from "./snapshot.ts";
+import {
+	barCells,
+	barColorName,
+	joinSnapshotLines,
+	layoutWidgetLine,
+	windowParts,
+	type WidgetSegment,
+} from "./snapshot.ts";
 
 // ------------------------------------------------------------------ helpers
 
@@ -318,6 +325,12 @@ function UsageGauge(props: { config: GaugeConfig; adapters: PlanUsageAdapter[] }
 				</text>,
 			);
 		}
+		// No windows and no balance (e.g. OpenRouter without a per-key credit
+		// cap): there is no denominator, so no bar — say why instead of showing
+		// a bare title.
+		if (current.data.windows.length === 0 && current.data.balance === undefined) {
+			lines.push(<text>{joinSnapshotLines([], current.data.note)}</text>);
+		}
 		return lines as never[];
 	};
 
@@ -392,7 +405,9 @@ function formatSnapshotText(data: PlanUsage, showCountdown: boolean): string {
 	if (data.balance !== undefined) {
 		lines.push(`balance ${data.balance.remaining.toFixed(2)} ${data.balance.currency}`);
 	}
-	return lines.join("\n");
+	// A provider with neither windows nor balance (OpenRouter with no per-key
+	// cap) must not open a blank dialog: fall back to the adapter's note.
+	return joinSnapshotLines(lines, data.note);
 }
 
 // --------------------------------------------------------------------- plugin

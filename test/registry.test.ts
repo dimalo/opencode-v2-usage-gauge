@@ -2,6 +2,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { ADAPTERS, ADAPTER_IDS, adapterForProvider, resolveAdapters } from "../src/registry.ts";
 import { GO_ADAPTER, GO_ENDPOINT, GO_PROVIDER_ID } from "../src/providers/go.ts";
+import { OPENROUTER_ADAPTER, OPENROUTER_PROVIDER_ID } from "../src/providers/openrouter.ts";
 import { createPlanSource } from "../src/usage.ts";
 import type { Credential, PlanOutcome, PlanUsageAdapter } from "../src/providers/types.ts";
 
@@ -40,6 +41,12 @@ test("registry exposes the Go adapter and resolves it by provider id", () => {
 	assert.equal(adapterForProvider(undefined), undefined);
 });
 
+test("registry exposes the OpenRouter adapter by its OpenCode provider id", () => {
+	assert.ok(ADAPTER_IDS.includes(OPENROUTER_PROVIDER_ID));
+	assert.equal(adapterForProvider("openrouter")?.id, OPENROUTER_PROVIDER_ID);
+	assert.equal(OPENROUTER_ADAPTER.label, "OpenRouter");
+});
+
 test("Go adapter metadata matches the live endpoint", () => {
 	assert.equal(GO_ADAPTER.id, "opencode-go");
 	assert.equal(GO_ADAPTER.label, "OpenCode Go");
@@ -51,6 +58,10 @@ test("resolveAdapters: explicit list, \"all\", and unknown-id fallback", () => {
 	assert.deepEqual(
 		resolveAdapters(["opencode-go"]).map((a) => a.id),
 		["opencode-go"],
+	);
+	assert.deepEqual(
+		resolveAdapters(["openrouter"]).map((a) => a.id),
+		["openrouter"],
 	);
 	assert.deepEqual(
 		resolveAdapters(["all"]).map((a) => a.id),

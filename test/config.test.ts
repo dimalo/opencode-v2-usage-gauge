@@ -49,13 +49,24 @@ test("maxWidth budget: positive ints kept, anything else auto (0)", () => {
 
 test("providers: single id, list, and \"all\"", () => {
 	assert.deepEqual(parseConfig({ providers: "opencode-go" }).providers, ["opencode-go"]);
-	assert.deepEqual(parseConfig({ providers: ["opencode-go"] }).providers, ["opencode-go"]);
+	assert.deepEqual(parseConfig({ providers: "openrouter" }).providers, ["openrouter"]);
+	assert.deepEqual(parseConfig({ providers: ["opencode-go", "openrouter"] }).providers, [
+		"opencode-go",
+		"openrouter",
+	]);
 	assert.deepEqual(parseConfig({ providers: "all" }).providers, ["all"]);
 	assert.deepEqual(parseConfig({ providers: ["all"] }).providers, ["all"]);
 	// duplicates collapse
 	assert.deepEqual(parseConfig({ providers: ["opencode-go", "opencode-go"] }).providers, [
 		"opencode-go",
 	]);
+});
+
+test("OpenRouter is opt-in: the default list stays Go-only", () => {
+	// A default-on OpenRouter adapter would issue a request on every plugin
+	// load for the majority of keys, which have no per-key cap (limit null) and
+	// therefore no gauge. Opt in with `providers: "all"` or an explicit list.
+	assert.deepEqual(DEFAULT_CONFIG.providers, ["opencode-go"]);
 });
 
 test("providers: unknown ids and garbage fall back to the default list", () => {

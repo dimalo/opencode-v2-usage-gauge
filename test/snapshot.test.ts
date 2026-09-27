@@ -309,6 +309,21 @@ test("layoutWidgetLine: -- percents overlay in the empty track (no resets, no cd
 test("layoutWidgetLine: empty windows produce an empty layout", () => {
 	assert.deepEqual(layoutWidgetLine([], LAYOUT_NOW, 100), { segments: [], showCountdown: false });
 });
+
+test("layoutWidgetLine: a non-canonical key uses its own label, never \"5h\"", () => {
+	// A provider whose window is not a rolling 5h window (OpenRouter's daily
+	// per-key credit cap) supplies its own short label.
+	const daily = layoutWidgetLine(
+		[{ key: "daily", label: "day", usagePercent: 40, limitDollars: 25 }],
+		LAYOUT_NOW,
+		100,
+	);
+	assert.equal(daily.segments[0]!.label, "day");
+	// Canonical keys are untouched by that widening.
+	assert.equal(layoutWidgetLine([{ key: "rolling", label: "5h", usagePercent: 40 }], LAYOUT_NOW, 100).segments[0]!.label, "5h");
+	assert.equal(layoutWidgetLine([{ key: "weekly", label: "week", usagePercent: 40 }], LAYOUT_NOW, 100).segments[0]!.label, "wk");
+	assert.equal(layoutWidgetLine([{ key: "monthly", label: "month", usagePercent: 40 }], LAYOUT_NOW, 100).segments[0]!.label, "mo");
+});
 test("layoutWidgetLine never exceeds the width budget", () => {
 	const windows: UsageWindowState[] = [
 		{ key: "rolling", label: "5h", usagePercent: 8, limitDollars: 12, resetsAtMs: 1_800_000_000_000 },
