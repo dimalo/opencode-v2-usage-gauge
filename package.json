@@ -4,6 +4,14 @@
   "description": "OpenCode 2 CLI plugin: an ASCII plan-usage gauge in the TUI prompt footer or sidebar, plus a /usage command. Zero config - reads credentials from OpenCode's own auth store. Ships with an OpenCode Go adapter; provider adapters are pluggable.",
   "type": "module",
   "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/dimalo/opencode-v2-usage-gauge.git"
+  },
+  "homepage": "https://github.com/dimalo/opencode-v2-usage-gauge#readme",
+  "bugs": {
+    "url": "https://github.com/dimalo/opencode-v2-usage-gauge/issues"
+  },
   "keywords": [
     "opencode",
     "opencode-v2",
@@ -38,5 +46,15 @@
     "@types/node": "^22.0.0",
     "solid-js": "~1.9.12",
     "typescript": "^5.7.0"
+  },
+  "files": [
+    "src",
+    "server.ts",
+    "tui.tsx",
+    "README.md",
+    "LICENSE"
+  ],
+  "engines": {
+    "node": ">=22"
   }
 }
