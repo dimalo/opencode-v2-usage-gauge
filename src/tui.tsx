@@ -1,0 +1,333 @@
+/**
+ * opencode-go-usage — TUI (CLI plugin) entry.
+ *
+ * Shows OpenCode Go subscription usage in the OpenCode V2 terminal UI —
+ * **only while an `opencode-go` model is selected** — as a single-line ASCII
+ * gauge appended to the `prompt.footer.status` slot, plus a `/usage` slash
+ * command that shows the full three-window snapshot in a dialog (and
+ * refreshes the widget).
+ *
+ *     Go  5h ════│12%────── ⟳3h47m · Mon ═══════24%│─── · 14d ════│12%──────
+ *
+ * Data source: official usage endpoint `GET https://opencode.ai/zen/go/v1/usage`
+ * (Bearer auth, live since 2026-08-11, upstream PR anomalyco/opencode#16513).
+ * The API key is resolved at runtime from OpenCode's own auth store
+ * (`auth.json`, see src/auth.ts) and is never logged, printed, or persisted.
+ *
+ * Scope note: no zen/credit-balance display — Go plan windows only; the
+ * widget hides for every non-`opencode-go` provider. May be extended later.
+ */
+
+import { Plugin, usePlugin } from "@opencode/plugin/tui";
+import { For, Show, createMemo, createSignal } from "solid-js";
+import { onCleanup, onMount } from "solid-js";
+import { DEFAULT_CONFIG, parseGoUsageConfig, type GoUsageConfig } from "./config.ts";
+import type { ParsedUsage } from "./parser.ts";
+import { readApiKeyFromAuthStore } from "./auth.ts";
+import { CACHE_TTL_MS, TARGET_PROVIDER, guardedFetch, type FetchOutcome } from "./usage.ts";
+import {
+	barCells,
+	barColorName,
+	layoutWidgetLine,
+	windowParts,
+	type WidgetSegment,
+} from "./snapshot.ts";
+
+// ------------------------------------------------------------------ helpers
+
+/** Widget colors map to live theme tokens at render time (never baked). */
+type ColorKind = "dim" | "base" | "accent" | "warning" | "error";
+
+interface GaugeSpan {
+	text: string;
+	color: ColorKind;
+}
+
+/**
+ * One gauge segment as an ordered span list (OpenTUI renders each `<text>`
+ * with its own `fg` token):
+ *   `{label} {gauge}` — track cells are `═` filled / `─` unfilled (dim),
+ *   `│` divider (base), percent label in the threshold color, flipped to
+ *   trail the divider below 50% and prefix it at 50%+.
+ */
+function buildGaugeSpans(segment: WidgetSegment): GaugeSpan[] {
+	const { pctText, color, gaugeWidth, divider, labelStart } = segment;
+	const pctColor: ColorKind = pctText === "--" ? "dim" : color;
+	const spans: GaugeSpan[] = [];
+	let current: ColorKind | undefined;
+	let buffer = "";
+	const push = () => {
+		if (buffer !== "" && current !== undefined) spans.push({ text: buffer, color: current });
+	};
+	for (let i = 0; i < gaugeWidth; i++) {
+		const labelIndex = i - labelStart;
+		let kind: ColorKind;
+		let ch: string;
+		if (labelIndex >= 0 && labelIndex < pctText.length) {
+			kind = pctColor;
+			ch = pctText[labelIndex]!;
+		} else if (i === divider) {
+			kind = "base";
+			ch = "│";
+		} else {
+			kind = "dim";
+			ch = i < divider ? "═" : "─";
+		}
+		if (kind !== current) {
+			push();
+			current = kind;
+			buffer = ch;
+		} else {
+			buffer += ch;
+		}
+	}
+	push();
+	return spans;
+}
+
+/** Layout "multi": title + one line per window (label, fixed 10-cell bar, pct, reset). */
+// (renderMultiLines below implements this in JSX)
+
+// --------------------------------------------------------------------- state
+
+const inflight: { value: Promise<FetchOutcome> | undefined } = { value: undefined };
+
+interface GoUsageCache {
+	fetchedAtMs: number;
+	data: ParsedUsage;
+}
+
+/**
+ * Shared module-level snapshot (Signal at module scope is safe in Solid —
+ * only computeds need ownership). The widget and the /usage command read and
+ * update the same state, so a /usage fetch immediately refreshes the widget.
+ */
+const [shared, setShared] = createSignal<GoUsageCache | undefined>(undefined);
+const [sharedStale, setSharedStale] = createSignal(false);
+/** Human-readable reason of the last failed fetch, cleared on success. */
+let lastError: string | undefined = undefined;
+
+function applyOutcome(outcome: FetchOutcome): void {
+	if (outcome.ok) {
+		setShared({ data: outcome.data, fetchedAtMs: outcome.data.fetchedAtMs });
+		setSharedStale(false);
+		lastError = undefined;
+	} else {
+		lastError = outcome.error;
+		if (outcome.kind === "no-key" || outcome.kind === "unauthorized") {
+			// No plan / key rejected → hide the widget entirely.
+			setShared(undefined);
+			setSharedStale(false);
+		} else {
+			// Transient failure: keep previous data visible, marked stale.
+			setSharedStale(true);
+		}
+	}
+}
+
+/** Fetch (single-flight, shared with the /usage command) and apply the outcome. */
+async function refresh(): Promise<void> {
+	const outcome = await guardedFetch(async () => readApiKeyFromAuthStore(), inflight);
+	applyOutcome(outcome);
+}
+
+// ------------------------------------------------------------------ component
+
+function UsageWidget(props: { config: GoUsageConfig }) {
+	const context = usePlugin();
+	const [now, setNow] = createSignal(Date.now());
+	const cache = shared;
+
+	onMount(() => {
+		void (async () => {
+			const current = cache();
+			if (current !== undefined && Date.now() - current.fetchedAtMs < CACHE_TTL_MS) return;
+			await refresh(); // single-flight; the ticker and /usage share this too
+		})();
+		const ticker = setInterval(() => {
+			try {
+				const current = cache();
+				if (current === undefined || Date.now() - current.fetchedAtMs >= CACHE_TTL_MS) {
+					void refresh(); // fire-and-forget; single-flight guard prevents overlap
+				}
+				setNow(Date.now()); // minute-granularity countdown re-render
+			} catch {
+				// Never crash the TUI from a tick.
+			}
+		}, 60_000);
+		onCleanup(() => clearInterval(ticker));
+	});
+
+	// ---------------------------------------------------------------- visibility
+
+	const visible = createMemo(
+		() => context.ui.model.current()?.providerID === TARGET_PROVIDER && cache() !== undefined,
+	);
+
+	const data = () => cache()!.data;
+
+	// widget geometry source: the prompt footer spans the full terminal width
+	const width = () => Math.max(40, context.renderer.width);
+
+	// --------------------------------------------------------------- rendering
+
+	const color = (kind: ColorKind) => {
+		const theme = context.theme;
+		switch (kind) {
+			case "dim":
+				return theme.text.muted;
+			case "accent":
+				return theme.text.feedback.info.base;
+			case "warning":
+				return theme.text.feedback.warning.base;
+			case "error":
+				return theme.text.feedback.error.base;
+			default:
+				return theme.text.base;
+		}
+	};
+
+	/** Single-line (default): `Go  5h ════│12%──── ⟳3h47m · Mon ═══════24%│─── · 14d …` */
+	const singleLine = () => {
+		const current = data();
+		const layout = layoutWidgetLine(current.windows, now(), width(), props.config.showCountdown);
+		return (
+			<box flexDirection="row">
+				<text fg={color("dim")}>Go </text>
+				<For each={layout.segments}>
+					{(segment, i) => (
+						<box flexDirection="row">
+							<Show when={i() > 0}>
+								<text fg={color("dim")}> · </text>
+							</Show>
+							<text fg={color("base")}>{segment.label} </text>
+							<For each={buildGaugeSpans(segment)}>
+								{(span) => <text fg={color(span.color)}>{span.text}</text>}
+							</For>
+							<Show when={layout.showCountdown && segment.countdown}>
+								<text fg={color("dim")}> ⟳{segment.countdown}</text>
+							</Show>
+						</box>
+					)}
+				</For>
+				<Show when={sharedStale()}>
+					<text fg={color("warning")}> (stale)</text>
+				</Show>
+			</box>
+		);
+	};
+
+	/** Multi-line variant: title + one full-width bar line per window. */
+	const multiLines = () => {
+		const current = data();
+		const nowMs = now();
+		const lines: any[] = [];
+		lines.push(
+			<text fg={color("dim")}>
+				OpenCode Go usage
+				<Show when={sharedStale()}> (stale)</Show>
+			</text>,
+		);
+		for (const state of current.windows) {
+			const parts = windowParts(state, nowMs);
+			const filled = barCells(state.usagePercent, 10);
+			lines.push(
+				<box flexDirection="row">
+					<text fg={color("base")}>{state.label.padEnd(5)}</text>
+					<text fg={color(barColorName(state.usagePercent))}>{"█".repeat(filled)}</text>
+					<text fg={color("dim")}>{"░".repeat(10 - filled)} </text>
+					<text fg={state.usagePercent !== undefined ? color("base") : color("dim")}>{parts.pctText}</text>
+					<Show when={props.config.showCountdown && parts.resetText}>
+						<text fg={color("dim")}> reset {parts.resetText}</text>
+					</Show>
+				</box>,
+			);
+		}
+		return <box flexDirection="column">{lines}</box>;
+	};
+
+	return (
+		<Show when={visible()}>
+			<Show when={props.config.layout === "multi"} fallback={singleLine()}>
+				{multiLines()}
+			</Show>
+		</Show>
+	);
+}
+
+// ------------------------------------------------------------------- plugin
+
+export default Plugin.define({
+	id: "opencode-go-usage.tui",
+	setup(context) {
+		const config = parseGoUsageConfig(context.options);
+
+		// Widget claim: additive append to the built-in prompt footer status row.
+		context.ui.slot({
+			append: "prompt.footer.status",
+			render: () => <UsageWidget config={config} />,
+		});
+
+		// /usage slash + palette command: always a fresh fetch, then dialog.
+		// Works regardless of which model is active (the widget itself stays
+		// gated on opencode-go). Shares the module-level fetch/state so the
+		// widget refreshes from the same fetch.
+		context.keymap.layer(() => ({
+			mode: "global",
+			priority: 10,
+			commands: [
+				{
+					id: "opencode-go-usage.snapshot",
+					title: "Show OpenCode Go usage",
+					group: "OpenCode Go",
+					palette: true,
+					slash: { name: "usage" },
+					suggested: true,
+					run: async (_input) => {
+						const apiKey = readApiKeyFromAuthStore();
+						if (apiKey === undefined) {
+							applyOutcome({
+								ok: false,
+								kind: "no-key",
+								error: 'No API key configured for provider "opencode-go".',
+							});
+						}
+						// /usage always fetches fresh — bypass the widget cache by
+						// resetting the shared fetchedAtMs first.
+						setShared((current) => (current === undefined ? current : { ...current, fetchedAtMs: 0 }));
+						await refresh();
+						const current = shared();
+						const message =
+							current !== undefined
+								? `${formatSnapshotText(current.data, config.showCountdown)}${
+										sharedStale() ? "\n(stale — last successful fetch, retry later)" : ""
+									}`
+								: (lastError ?? "usage unavailable: unknown error");
+						await context.ui.dialog.alert({
+							title: "OpenCode Go usage",
+							message,
+						});
+					},
+				},
+			],
+			bindings: [],
+		}));
+	},
+});
+
+/** Multi-line plain-text snapshot for the dialog. */
+function formatSnapshotText(data: ParsedUsage, showCountdown: boolean): string {
+	const nowMs = Date.now();
+	return data.windows
+		.map((state) => {
+			const parts = windowParts(state, nowMs);
+			const filled = barCells(state.usagePercent, 10);
+			const bar = "█".repeat(filled) + "░".repeat(10 - filled);
+			const reset = showCountdown && parts.resetText ? ` reset ${parts.resetText}` : "";
+			const dollars = parts.dollarsText !== "" ? ` ${parts.dollarsText}` : "";
+			return `${state.label.padEnd(5)} ${bar} ${parts.pctText}${dollars}${reset}`;
+		})
+		.join("\n");
+}
+
+export const WIDGET_TARGET_PROVIDER = TARGET_PROVIDER;
