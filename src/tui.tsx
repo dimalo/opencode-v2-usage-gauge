@@ -242,11 +242,25 @@ function UsageGauge(props: { config: GaugeConfig; adapters: PlanUsageAdapter[] }
 			props.config.maxWidth > 0
 				? Math.min(full, props.config.maxWidth)
 				: Math.max(48, Math.min(full, Math.floor(full / 2)));
-		// No quota windows: a spend-only provider (OpenRouter with no per-key
-		// cap) shows its measured amount, never a bar. If it does not fit the
-		// shared footer row, show nothing rather than wrap — and if there is no
-		// number at all, hide entirely instead of leaving a dangling prefix.
+		// No quota windows: show the account balance if we have one, else the
+		// key's measured spend. Never a bar (no denominator), never an
+		// explanation — and if there is no number at all, hide entirely rather
+		// than leaving a dangling prefix.
 		if (current.data.windows.length === 0) {
+			const balance = current.data.balance;
+			if (balance !== undefined) {
+				return (
+					<text>
+						<span style={{ fg: color("dim") }}>{prefix()}balance </span>
+						<span style={{ fg: color("base") }}>
+							{balance.remaining.toFixed(2)} {balance.currency}
+						</span>
+						<Show when={current.stale}>
+							<span style={{ fg: color("warning") }}> (stale)</span>
+						</Show>
+					</text>
+				);
+			}
 			const spent = current.data.spend;
 			if (spent === undefined || spendWidgetLine(spent, prefix(), budget) === undefined) {
 				return null;
@@ -300,6 +314,16 @@ function UsageGauge(props: { config: GaugeConfig; adapters: PlanUsageAdapter[] }
 	const multiLines = () => {
 		const current = state();
 		if (current === undefined) return null;
+		// Nothing measured (no window, no balance, no spend) → render nothing
+		// at all: no bare title, and no explanation. The reason lives in
+		// `/usage`, not in the always-on sidebar.
+		if (
+			current.data.windows.length === 0 &&
+			current.data.balance === undefined &&
+			current.data.spend === undefined
+		) {
+			return null;
+		}
 		const adapter = active();
 		const title = adapter === undefined ? "Plan usage" : `${adapter.label} usage`;
 		const nowMs = now();
@@ -345,19 +369,15 @@ function UsageGauge(props: { config: GaugeConfig; adapters: PlanUsageAdapter[] }
 				</text>,
 			);
 		}
-		if (current.data.spend !== undefined) {
+		// The balance is the headline when present, so the lifetime spend is
+		// shown only as a fallback (no balance to report).
+		if (current.data.spend !== undefined && current.data.balance === undefined) {
 			lines.push(
 				<text>
 					<span style={{ fg: color("dim") }}>spent </span>
 					<span style={{ fg: color("base") }}>{spendAmountText(current.data.spend)}</span>
 				</text>,
 			);
-		}
-		// No bar (no windows) → say why, so the section is never just a title.
-		// A spend figure does not explain a missing denominator, so the note
-		// still renders alongside it.
-		if (current.data.windows.length === 0) {
-			lines.push(<text>{joinSnapshotLines([], current.data.note)}</text>);
 		}
 		return lines as never[];
 	};
@@ -436,12 +456,8 @@ function formatSnapshotText(data: PlanUsage, showCountdown: boolean): string {
 	if (data.spend !== undefined) {
 		lines.push(spendDetailText(data.spend));
 	}
-	// No bar (no windows) → say why, alongside any spend figure. A provider
-	// with neither windows nor balance (OpenRouter with no per-key cap) must
-	// not open a blank dialog: fall back to the adapter's note.
-	if (data.windows.length === 0 && data.note !== undefined) {
-		lines.push(data.note);
-	}
+	// No explanation alongside a number: the note is only the last resort when
+	// there is nothing at all to report (a blank dialog would read as broken).
 	return joinSnapshotLines(lines, data.note);
 }
 

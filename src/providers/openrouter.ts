@@ -13,18 +13,17 @@
  *     `limit_reset`). With `limit > 0` the mapping onto `PlanWindow` is exact:
  *     `usagePercent = (1 - limit_remaining/limit) * 100`, and the dollars are
  *     `limit - limit_remaining` of `limit`.
- *   - With `limit` null — the default for most keys — there is no denominator.
- *     A bar without a denominator is a lie, so the snapshot carries NO window
- *     and a `note` instead. The key's lifetime `usage` is still a real number,
- *     so it is shown as a measured amount (`spend`, `scope: "key"`) rather than
- *     nothing: the gauge reads `spent $17.10 USD · this key` and `/usage`
- *     explains why there is no bar.
- *   - The **account** credit balance is not exposed by any endpoint, so
- *     `PlanUsage.balance` is never filled. `/api/v1/credits` returns two
- *     CUMULATIVE lifetime counters (`total_credits`, `total_usage`); a balance
- *     derived from those breaks on refunds, negative carryover and fee
- *     divergence, so it is deliberately not used. Several popular projects
- *     derive one anyway and are wrong.
+ *   - With `limit` null — the default for most keys — there is no denominator,
+ *     so no bar is drawn. The account's remaining credits are then read from
+ *     `GET /api/v1/credits` (`total_credits - total_usage`) and shown as a
+ *     plain balance, no bar. If that endpoint does not answer, the key's
+ *     lifetime `usage` is shown as a measured amount (`spend`, `scope: "key"`)
+ *     instead. Either way the widget never explains itself; `/usage` is where
+ *     the reason lives.
+ *   - The account balance is NOT on `/api/v1/key`; `/api/v1/credits` is the
+ *     only source. Its docs say a management key is required, but a normal
+ *     inference key gets HTTP 200 in practice, so it is used best-effort (a
+ *     403 or schema drift just means no balance line).
  *   - `rate_limit` is documented as deprecated ("safe to ignore") and is
  *     ignored here.
  *   - `/api/v1/activity` and `/api/v1/keys` need a *management* key, which
@@ -42,6 +41,7 @@
 import { readApiKeyFromAuthStore } from "../auth.ts";
 import type {
 	Credential,
+	PlanBalance,
 	PlanOutcome,
 	PlanSpend,
 	PlanUsage,
@@ -51,6 +51,7 @@ import type {
 
 export const OPENROUTER_PROVIDER_ID = "openrouter";
 export const OPENROUTER_ENDPOINT = "https://openrouter.ai/api/v1/key";
+export const OPENROUTER_CREDITS_ENDPOINT = "https://openrouter.ai/api/v1/credits";
 export const OPENROUTER_REQUEST_TIMEOUT_MS = 10_000;
 
 /** Shown by `/usage` when the key has no per-key cap (there is nothing to bar). */
@@ -112,6 +113,9 @@ export const OPENROUTER_ADAPTER: PlanUsageAdapter = {
 		}
 
 		const window = parseCap(data);
+		// Only ask for the account balance when there is no per-key cap: a
+		// capped key already has a real bar, so a second request would be waste.
+		const balance = window === undefined ? await fetchAccountBalance(credential) : undefined;
 		const nowMs = Date.now();
 		const payload: PlanUsage = {
 			provider: OPENROUTER_PROVIDER_ID,
@@ -119,11 +123,13 @@ export const OPENROUTER_ADAPTER: PlanUsageAdapter = {
 			// credential — never surface it. (Test fixtures use an obviously
 			// fake sentinel, never a fragment copied from a live response.)
 			windows: window === undefined ? [] : [window],
-			// No cap → no bar, but the key's lifetime usage is still a real
-			// number the API reports, so show it as a measured amount (never a
-			// percentage). With a cap the window already carries the dollars,
-			// so a second spend line would be redundant.
-			spend: window === undefined ? lifetimeSpend(data) : undefined,
+			// Remaining account credits, when `/credits` answers (see below).
+			balance,
+			// No cap and no balance → the key's lifetime usage is still a real
+			// number, shown as a measured amount (never a percentage). With a
+			// cap the window carries the dollars; with a balance the balance is
+			// the headline, so spend would be redundant.
+			spend: window === undefined && balance === undefined ? lifetimeSpend(data) : undefined,
 			note: window === undefined ? NO_KEY_LIMIT_NOTE : undefined,
 			fetchedMs: nowMs,
 			valid: true,
@@ -131,6 +137,47 @@ export const OPENROUTER_ADAPTER: PlanUsageAdapter = {
 		return { ok: true, data: payload };
 	},
 };
+
+/**
+ * The account's remaining credits, from `GET /api/v1/credits`.
+ *
+ * OpenRouter's docs say this endpoint needs a *management* key, but it answers
+ * a normal inference key in practice (verified: HTTP 200 with
+ * `is_management_key: false`), and its page is titled "Get remaining credits"
+ * while returning the two counters you subtract: `total_credits -
+ * total_usage`. That subtraction is the endpoint's documented purpose, not a
+ * derived guess, so it is used — but strictly best-effort: if the restriction
+ * is ever enforced (403), or the request fails or the schema drifts, this
+ * returns undefined and the gauge simply shows no balance.
+ */
+async function fetchAccountBalance(credential: Credential): Promise<PlanBalance | undefined> {
+	if (credential.kind !== "bearer") return undefined;
+
+	let res: Response;
+	try {
+		res = await fetch(OPENROUTER_CREDITS_ENDPOINT, {
+			headers: { Authorization: `Bearer ${credential.token}` },
+			signal: AbortSignal.timeout(OPENROUTER_REQUEST_TIMEOUT_MS),
+		});
+	} catch {
+		return undefined;
+	}
+	if (!res.ok) return undefined;
+
+	let json: unknown;
+	try {
+		json = await res.json();
+	} catch {
+		return undefined;
+	}
+	const data = isRecord(json) ? json.data : undefined;
+	if (!isRecord(data)) return undefined;
+
+	const total = finite(data.total_credits);
+	const used = finite(data.total_usage);
+	if (total === undefined || used === undefined) return undefined;
+	return { remaining: total - used, currency: "USD" };
+}
 
 /**
  * The per-key cap as one window, or undefined when there is no denominator.

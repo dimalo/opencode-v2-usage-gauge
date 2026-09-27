@@ -14,13 +14,17 @@ OpenCode 1 does not load V2 plugins.
   `Credential` union, `PlanUsage`/`PlanWindow`, `PlanOutcome`). This is the
   extension seam: one file per provider, nothing else changes.
 - `src/providers/go.ts` — OpenCode Go adapter (endpoint, credential, parse).
-  Future adapters (Zen, Copilot, Kiro) go beside it.
-- `src/spend.ts` — local consumption meter, currently **unwired groundwork**.
-  Pure and side-effect free: sums the tracked provider's assistant `cost` over
-  the session family. It exists for pay-as-you-go providers; no adapter
-  consumes it yet, because Zen's balance has no API (anomalyco/opencode#44189).
-  Do not wire it to a provider that cannot report a budget — a delta is not a
-  percentage.
+  `src/providers/openrouter.ts` — per-key cap, else account balance from
+  `/api/v1/credits` (best-effort), else the key's lifetime usage. Future
+  adapters (Zen, Copilot, Kiro) go beside them.
+- `src/spend.ts` — local consumption meter, still **unwired groundwork** (the
+  `computeSessionSpend` path). Pure and side-effect free: sums the tracked
+  provider's assistant `cost` over the session family. It exists for
+  pay-as-you-go providers; no adapter consumes the *local meter* yet, because
+  Zen's balance has no API (anomalyco/opencode#44189). Do not wire it to a
+  provider that cannot report a budget — a delta is not a percentage. (The
+  `PlanUsage.spend` field itself is now used by the OpenRouter adapter, which
+  reports a network-sourced lifetime amount, not a local delta.)
 - `src/registry.ts` — the one place adapters are registered and enabled.
 - `src/usage.ts` — provider-agnostic plumbing: credential resolution,
   single-flight fetch, 5 min TTL, last-good snapshot retention.

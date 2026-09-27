@@ -23,7 +23,7 @@ you install it.
 - **Zero configuration** — no cookie, no workspace id, no config file, no secrets in your config.
 - **Always visible, zero context cost** — one ASCII line appended to the prompt footer row. It never enters the conversation, so it can't pollute the model's context.
 - **Follows your model** — the gauge tracks whichever provider the selected model belongs to.
-- **Pluggable providers** — each billing API is a small adapter that normalizes to one shape. OpenCode Go ships today, plus an opt-in OpenRouter per-key-cap adapter; OpenCode Zen, GitHub Copilot, Kiro and others are additive.
+- **Pluggable providers** — each billing API is a small adapter that normalizes to one shape. OpenCode Go ships today, plus an opt-in OpenRouter adapter (per-key cap, else account balance); OpenCode Zen, GitHub Copilot, Kiro and others are additive.
 - **No dependencies, no build step** — TypeScript loaded directly by the host. 79 unit tests.
 
 ## Install
@@ -93,39 +93,38 @@ width math, the sidebar layout, the dialog — is provider-agnostic.
 | Adapter id      | Plan            | Credential                              | Status |
 | --------------- | --------------- | --------------------------------------- | ------ |
 | `opencode-go`   | rolling / weekly / monthly windows | key from OpenCode's auth store | shipped |
-| `openrouter`    | per-key credit cap (daily / weekly / monthly, **opt-in**) | key from OpenCode's auth store | shipped |
+| `openrouter`    | per-key credit cap, else account balance (**opt-in**) | key from OpenCode's auth store | shipped |
 
-`openrouter` is **not** in the default `providers` list: most OpenRouter keys
-have no per-key credit limit, so for those users there is no bar to draw and the
-adapter would only cost a request. Opt in with `"providers": "all"` or
+`openrouter` is **not** in the default `providers` list: the cap and the balance
+are both optional, so for many keys there is no bar to draw and the adapter would
+only cost a request. Opt in with `"providers": "all"` or
 `"providers": ["opencode-go", "openrouter"]`.
 
-### OpenRouter: a per-key cap, and only that
+### OpenRouter: a per-key cap, or the account balance
 
-The OpenRouter gauge is built from `GET /api/v1/key`, which reports the
-**per-key spending cap**: `limit`, `limit_remaining` and the `limit_reset`
-cadence. With `limit > 0` that maps exactly onto the existing window contract —
-`88%` of `$100` drawn as a bar, labelled by cadence (`day` / `wk` / `mo`).
+The gauge is built from `GET /api/v1/key`, the endpoint OpenRouter's own docs
+name for checking "the rate limit or credits left on an API key". It reports the
+**per-key spending cap** (`limit`, `limit_remaining`, `limit_reset`); with
+`limit > 0` that maps exactly onto the window contract — `88%` of `$100` drawn as
+a bar, labelled by cadence (`day` / `wk` / `mo`).
 
-Three things it deliberately does not do:
+**Without a per-key cap** there is no denominator, so no bar is drawn. The
+account's remaining credits are then read from `GET /api/v1/credits`, whose page
+is titled "Get remaining credits" and returns the two counters you subtract:
+`total_credits - total_usage`. That is shown as a plain `balance 12.53 USD` line
+— a real number, never a percentage. If `/credits` does not answer, the key's
+lifetime `usage` is shown instead as a measured amount (`spent $17.10 USD · this
+key`). If neither is available, the widget shows nothing at all.
 
-- **Without a per-key credit limit there is no bar** — `limit` is `null` for
-  most keys, and a bar without a denominator would be a lie. Instead the key's
-  lifetime `usage` is shown as a measured amount (`spent $17.10 USD · this key`),
-  and `/usage` explains why there is no bar. A number is never invented, and a
-  percentage is never derived from a total. (Whether the plugin should tell you
-  to go set a limit is still an open question; it does not yet.)
-- **`balance` is never filled.** The account's credit balance is not exposed by
-  any endpoint reachable with a normal API key.
-- **`/api/v1/credits` is deliberately not used.** It returns two *cumulative*
-  lifetime counters (`total_credits`, `total_usage`). A "remaining balance"
-  derived from those breaks on refunds, negative carryover and fee divergence,
-  and the docs page's own nav title contradicts its schema. Several popular
-  projects derive one anyway, and are wrong.
+Two honest caveats:
 
-Also note: `limit_reset` is a cadence, not a timestamp, and OpenRouter does not
-document the instant at which the cap resets — so no reset countdown is shown
-rather than an invented one. The deprecated `rate_limit` object is ignored.
+- **`/api/v1/credits` is documented as management-key-only, but answers a normal
+  inference key in practice** (verified: HTTP 200 with `is_management_key:
+  false`). It is used best-effort — if the restriction is ever enforced (403) or
+  the schema drifts, the balance line simply disappears; nothing else breaks.
+- **`limit_reset` is a cadence, not a timestamp**, and OpenRouter does not
+  document the instant at which the cap resets — so no reset countdown is shown
+  rather than an invented one. The deprecated `rate_limit` object is ignored.
 
 
 ### Not yet: OpenCode Zen

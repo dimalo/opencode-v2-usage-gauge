@@ -22,32 +22,50 @@ function keyPayload(data: Record<string, unknown> | null): unknown {
 	return { data: { label: CREDENTIAL_LABEL_SENTINEL, usage: 25.5, rate_limit: { interval: "1h", requests: 1000, note: "deprecated" }, ...data } };
 }
 
+/** Recorded-shaped `/api/v1/credits` payload (docs example shape). */
+function creditsPayload(total: number, used: number): unknown {
+	return { data: { total_credits: total, total_usage: used } };
+}
+
 interface Stub {
 	status: number;
 	body: string;
 	contentType?: string;
 }
 
-/** Install a fetch stub for one call; returns the restore function. */
-function withFetch(stub: Stub, run: () => Promise<void>): Promise<void> {
+/**
+ * Install a fetch stub for one call; returns the restore function. `credits`
+ * routes the `/credits` request to its own stub — the adapter calls two
+ * endpoints, and a single body would otherwise answer both.
+ */
+function withFetch(stub: Stub, run: () => Promise<void>, credits?: Stub): Promise<void> {
 	const original = globalThis.fetch;
-	globalThis.fetch = (async () =>
-		new Response(stub.body, {
-			status: stub.status,
-			headers: { "content-type": stub.contentType ?? "application/json" },
-		})) as typeof fetch;
+	globalThis.fetch = (async (input: RequestInfo | URL) => {
+		const url = typeof input === "string" ? input : input instanceof URL ? input.href : input.url;
+		const chosen = credits !== undefined && url.includes("/credits") ? credits : stub;
+		return new Response(chosen.body, {
+			status: chosen.status,
+			headers: { "content-type": chosen.contentType ?? "application/json" },
+		});
+	}) as typeof fetch;
 	return run().finally(() => {
 		globalThis.fetch = original;
 	});
 }
 
-async function fetchWith(body: unknown, status = 200): Promise<PlanUsage> {
+async function fetchWith(body: unknown, status = 200, credits?: unknown): Promise<PlanUsage> {
 	let result: PlanUsage | undefined;
-	await withFetch({ status, body: JSON.stringify(body) }, async () => {
-		const outcome = await OPENROUTER_ADAPTER.fetch(CRED);
-		assert.equal(outcome.ok, true, "expected an ok outcome");
-		if (outcome.ok) result = outcome.data;
-	});
+	const creditsStub =
+		credits === undefined ? undefined : { status: 200, body: JSON.stringify(credits) };
+	await withFetch(
+		{ status, body: JSON.stringify(body) },
+		async () => {
+			const outcome = await OPENROUTER_ADAPTER.fetch(CRED);
+			assert.equal(outcome.ok, true, "expected an ok outcome");
+			if (outcome.ok) result = outcome.data;
+		},
+		creditsStub,
+	);
 	assert.ok(result !== undefined);
 	return result;
 }
@@ -129,6 +147,58 @@ test("limit null (the default) yields no window, a lifetime spend figure, and a 
 	);
 	assert.equal(joinSnapshotLines([], data.note), NO_KEY_LIMIT_NOTE, "/usage must not be blank");
 	assert.equal(layoutWidgetLine(data.windows, Date.now(), 80).segments.length, 0);
+});
+
+test("no per-key cap: the account balance comes from /credits (total_credits - total_usage)", async () => {
+	const data = await fetchWith(
+		keyPayload({ limit: null, limit_remaining: null, limit_reset: null }),
+		200,
+		creditsPayload(235, 222.47),
+	);
+	assert.deepEqual(data.windows, []);
+	assert.equal(data.balance?.currency, "USD");
+	// Money is displayed with toFixed(2); the raw double carries float noise
+	// (235 - 222.47 = 12.530000000000001), so compare the rendered value.
+	assert.equal(data.balance?.remaining.toFixed(2), "12.53");
+	assert.equal(data.spend, undefined, "the balance is the headline; no spend line alongside it");
+});
+
+test("a capped key does not call /credits (the window already carries the dollars)", async () => {
+	// A credits body is available, but the adapter must not ask for it when a
+	// cap already gives a real bar — so balance stays undefined.
+	const data = await fetchWith(
+		keyPayload({ limit: 100, limit_remaining: 74.5, limit_reset: "monthly" }),
+		200,
+		creditsPayload(235, 222.47),
+	);
+	assert.equal(data.windows.length, 1);
+	assert.equal(data.balance, undefined);
+	assert.equal(data.spend, undefined);
+});
+
+test("/credits failure (403 if the management-key rule is enforced) degrades to spend", async () => {
+	let result: PlanUsage | undefined;
+	await withFetch(
+		{ status: 200, body: JSON.stringify(keyPayload({ limit: null, limit_remaining: null })) },
+		async () => {
+			const outcome = await OPENROUTER_ADAPTER.fetch(CRED);
+			assert.equal(outcome.ok, true, "a /credits failure must not fail the whole fetch");
+			if (outcome.ok) result = outcome.data;
+		},
+		{ status: 403, body: JSON.stringify({ error: { code: 403, message: "Only management keys" } }) },
+	);
+	assert.equal(result?.balance, undefined);
+	assert.deepEqual(result?.spend, { amount: 25.5, currency: "USD", scope: "key" });
+});
+
+test("/credits with a malformed body yields no balance, never NaN", async () => {
+	const data = await fetchWith(
+		keyPayload({ limit: null, limit_remaining: null }),
+		200,
+		{ data: { total_credits: "235", total_usage: null } },
+	);
+	assert.equal(data.balance, undefined);
+	assert.deepEqual(data.spend, { amount: 25.5, currency: "USD", scope: "key" });
 });
 
 test("no usage field → no spend figure (a missing number is absent, not zero)", async () => {
