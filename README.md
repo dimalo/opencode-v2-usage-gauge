@@ -51,10 +51,15 @@ minimum of 6 cells, then the line truncates.
 
 ## Install
 
-Option A — configure the local clone directly (global):
+Verified on OpenCode `v2.0.18`.
+
+Option A — configure the local clone directly (global config). The plugin
+MUST be given as a **directory** and needs the repo's root-level `server.ts`
+and `tui.tsx` entry files (both included here):
 
 ```bash
 git clone <repo-url> opencode-go-usage
+cd opencode-go-usage && npm install   # zero runtime deps; node_modules only for dev
 ```
 
 ```jsonc title="~/.config/opencode/opencode.jsonc"
@@ -64,15 +69,17 @@ git clone <repo-url> opencode-go-usage
 }
 ```
 
-Option B — install as a package (npm/Git), then:
+Option B — drop the clone into the global discovery directory:
 
 ```bash
-opencode plugin add <package-name>
+cp -R opencode-go-usage ~/.config/opencode/plugins/opencode-go-usage
 ```
 
-The package exports both `.` (server entry, stub) and `./tui` (TUI entry,
-auto-loaded beside the main plugin). Restart OpenCode / run
-`opencode service restart` after installing.
+(Files, `src/…` paths and `exports` subpaths are NOT accepted for local
+directory plugins — the loader resolves `server`/`tui` at the directory root.)
+
+Then restart OpenCode (`opencode service restart`, and restart any open TUI
+instances — the TUI entry loads per TUI process).
 
 ## Config
 
