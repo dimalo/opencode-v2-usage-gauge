@@ -25,8 +25,15 @@ root-level entry files — effectively `resolve(dir, "server")` and
 are NOT consulted for local directory plugins, and point files are rejected
 (`configured plugin path must be a directory`). The top-level `server.ts`
 and `tui.tsx` re-export shims must stay; `src/index.ts` and `src/tui.tsx`
-hold the real logic. Install: `"plugins": ["/abs/path/to/repo"]` in
-`~/.config/opencode/opencode.json`, then `opencode service restart`.
+hold the real logic.
+
+Install in `~/.config/opencode/cli.json`, **not** `opencode.json`:
+`"plugins": ["/abs/path/to/repo"]`, then restart the TUI. This plugin is
+TUI-only (its server entry is a stub), and the CLI learns the plugin list
+from the server's `Plugin.Info` response, whose schema carries no `options`
+— so options declared in `opencode.json` reach `context.options` as `{}`.
+`cli.json` is read by the CLI itself and does deliver them. Listing the
+plugin in both files double-loads the TUI entry and duplicates slot claims.
 
 ## Conventions
 

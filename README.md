@@ -62,12 +62,19 @@ git clone <repo-url> opencode-go-usage
 cd opencode-go-usage && npm install   # zero runtime deps; node_modules only for dev
 ```
 
-```jsonc title="~/.config/opencode/opencode.jsonc"
+```jsonc title="~/.config/opencode/cli.json"
 {
-  "$schema": "https://opencode.ai/config.json",
   "plugins": ["/absolute/path/to/opencode-go-usage"]
 }
 ```
+
+> **Configure it in `cli.json`, not `opencode.json`.** Everything this plugin
+> does is TUI-side, and the CLI only learns *which* plugins to load from the
+> server's `Plugin.Info` list, whose schema (`openapi.json`) has no `options`
+> field (`additionalProperties: false`). Options configured in `opencode.json`
+> therefore arrive as `{}` in `context.options`; `cli.json` is read by the CLI
+> itself and does deliver them. Listing the plugin in both files loads the TUI
+> entry twice and duplicates every slot claim.
 
 Option B — drop the clone into the global discovery directory:
 
@@ -83,12 +90,12 @@ instances — the TUI entry loads per TUI process).
 
 ## Config
 
-Pass plugin options in the `plugins` entry (object form), e.g.:
+Pass plugin options in the `plugins` entry of `cli.json` (object form), e.g.:
 
-```jsonc
+```jsonc title="~/.config/opencode/cli.json"
 {
   "plugins": [
-    { "package": "/absolute/path/to/opencode-go-usage", "options": { "layout": "multi" } }
+    { "package": "/absolute/path/to/opencode-go-usage", "options": { "placement": "sidebar" } }
   ]
 }
 ```
