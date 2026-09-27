@@ -17,6 +17,17 @@ OpenCode V2 CLI plugin: OpenCode Go usage widget in the prompt footer plus a
 - `src/auth.ts` reads the API key from OpenCode's auth store; the key must
   never be logged or persisted.
 
+## Loader contract (verified on v2.0.18)
+
+The V2 plugin loader resolves **configured plugin directories** through
+root-level entry files — effectively `resolve(dir, "server")` and
+`resolve(dir, "tui")` (plus `""`/`index`). Package.json `exports` subpaths
+are NOT consulted for local directory plugins, and point files are rejected
+(`configured plugin path must be a directory`). The top-level `server.ts`
+and `tui.tsx` re-export shims must stay; `src/index.ts` and `src/tui.tsx`
+hold the real logic. Install: `"plugins": ["/abs/path/to/repo"]` in
+`~/.config/opencode/opencode.json`, then `opencode service restart`.
+
 ## Conventions
 
 - Tabs for TS indentation (matches the pi extension source).
