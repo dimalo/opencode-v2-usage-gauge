@@ -12,14 +12,14 @@ updates:
     open-pull-requests-limit: 5
     labels:
       - dependencies
-      - automerge
     commit-message:
       prefix: "chore(deps)"
     groups:
       # The dev toolchain (TypeScript, OpenTUI, Solid, Node types) moves
-      # together; one PR is easier to review than six.
+      # together; one PR is easier to review than six. No `applies-to` here on
+      # purpose: a group covers a single update type, and restricting it to
+      # version-updates would leave every minor/patch bump in its own PR.
       dev-toolchain:
-        applies-to: version-updates
         dependency-type: development
         patterns:
           - "@opentui/*"
@@ -27,9 +27,6 @@ updates:
           - "typescript"
           - "solid-js"
           - "@types/*"
-        update-types:
-          - minor
-          - patch
 
   # GitHub Actions workflows are pinned by tag; keep them current too, since
   # the plugin's loader contract is verified against specific host versions.
@@ -39,7 +36,6 @@ updates:
       interval: monthly
     labels:
       - dependencies
-      - automerge
     commit-message:
       prefix: "chore(ci)"
     groups:
