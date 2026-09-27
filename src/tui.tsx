@@ -166,8 +166,16 @@ function UsageWidget(props: { config: GoUsageConfig }) {
 
 	const data = () => cache()!.data;
 
-	// widget geometry source: the prompt footer spans the full terminal width
-	const width = () => Math.max(40, context.renderer.width);
+	// Widget geometry source. The prompt footer is a SHARED row — the built-in
+	// cost/hint items render next to the claim, so budgeting the full terminal
+	// width overflows and wraps. Take at most half the row (floor keeps the
+	// line fitting even on a tiny terminal), or whatever `maxWidth` allows.
+	const width = () => {
+		const full = Math.max(40, context.renderer.width);
+		const explicit = props.config.maxWidth;
+		if (explicit > 0) return Math.min(full, explicit);
+		return Math.max(48, Math.min(full, Math.floor(full / 2)));
+	};
 
 	// --------------------------------------------------------------- rendering
 

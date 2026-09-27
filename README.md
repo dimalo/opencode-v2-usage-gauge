@@ -97,6 +97,8 @@ Pass plugin options in the `plugins` entry (object form), e.g.:
 | -------------- | ---------------------------- | ---------- | ------------------------------------------------------------- |
 | `layout`       | `"single"` \| `"multi"`      | `"single"` | One compact line, or a title plus one line per window         |
 | `showCountdown`| `true` \| `false`            | `true`     | Show reset countdowns (⟳ on the line; `reset …` in multi/dialog) |
+| `placement`    | `"promptFooter"` \| `"sidebar"` \| `"both"` | `"promptFooter"` | Claim the prompt footer row, the session sidebar, or both. `sidebar` renders the multi-line variant |
+| `maxWidth`     | number of cells              | `0` (auto) | Cell budget for the single line. `0` = at most half the row (min 48), because the footer row is shared with the built-in cost/hint items |
 
 The options hold **no secrets** — the API key always stays in OpenCode's
 auth store.

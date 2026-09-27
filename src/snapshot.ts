@@ -218,27 +218,38 @@ export function layoutWidgetLine(
 	const countdownText = base.find((segment) => segment.countdown !== undefined)?.countdown;
 	const countdownW = countdownText !== undefined ? 1 + 1 + visibleWidth(countdownText) : 0; // " ⟳" + duration
 
-	// Fixed content, all measured (labels 2–3 cells, countdown variable).
-	const staticW =
+	// Fixed content for the first `count` segments, all measured (labels 2–3
+	// cells, countdown variable). Segments are dropped from the tail when the
+	// budget is too small, so the returned line ALWAYS fits `width` (the
+	// rolling window is kept — it is the one that changes fastest).
+	const staticWidth = (count: number) =>
 		PREFIX_WIDTH +
-		SEGMENT_SEPARATOR_WIDTH * Math.max(0, n - 1) +
-		base.reduce((acc, segment) => acc + visibleWidth(segment.label) + 1, 0);
+		SEGMENT_SEPARATOR_WIDTH * Math.max(0, count - 1) +
+		base
+			.slice(0, count)
+			.reduce((acc, segment) => acc + visibleWidth(segment.label) + 1, 0);
+
+	let count = n;
+	while (count > 1 && staticWidth(count) + count * MIN_GAUGE_WIDTH > width) count--;
+
+	const staticW = staticWidth(count);
 
 	let gaugeWidth: number;
 	let showCd = false;
-	if (countdownW > 0 && staticW + countdownW + n * MIN_GAUGE_WIDTH <= width) {
-		gaugeWidth = Math.floor((width - staticW - countdownW) / n);
+	if (countdownW > 0 && staticW + countdownW + count * MIN_GAUGE_WIDTH <= width) {
+		gaugeWidth = Math.floor((width - staticW - countdownW) / count);
 		showCd = true;
-	} else if (staticW + n * MIN_GAUGE_WIDTH <= width) {
-		gaugeWidth = Math.floor((width - staticW) / n);
+	} else if (staticW + count * MIN_GAUGE_WIDTH <= width) {
+		gaugeWidth = Math.floor((width - staticW) / count);
 	} else {
-		// Even the minimum track doesn't fit — caller truncates.
+		// Last resort: minimum track. With count === 1 this always fits, since
+		// the budget floor is wider than label + prefix + MIN_GAUGE_WIDTH.
 		gaugeWidth = MIN_GAUGE_WIDTH;
 	}
 
 	return {
 		showCountdown: showCd,
-		segments: base.map((segment) => {
+		segments: base.slice(0, count).map((segment) => {
 			const geometry = gaugeGeometry(segment.pctText, segment.percent, gaugeWidth);
 			return {
 				label: segment.label,

@@ -207,10 +207,20 @@ test("layoutWidgetLine: min track without countdown at exactly 38 cells", () => 
 	assertSegments(layout, [6, 6, 6], [1, 1, 1], [2, 2, 2]);
 });
 
-test("layoutWidgetLine: below the min track the caller truncates (track stays 6)", () => {
+test("layoutWidgetLine: below the 3-segment budget the tail is dropped (37 cells)", () => {
+	// 3 segments need 20+18 = 38 cells. At 37 the monthly window is dropped
+	// (rolling survives) instead of overflowing the row.
 	const layout = layoutWidgetLine(threeWindows(), LAYOUT_NOW, 37);
-	assert.equal(layout.showCountdown, false);
-	assertSegments(layout, [6, 6, 6], [1, 1, 1], [2, 2, 2]);
+	assert.equal(layout.segments.length, 2);
+	assertSegments(layout, [8, 8], [1, 2], [2, 3]);
+});
+
+test("layoutWidgetLine: always keeps at least the rolling window", () => {
+	for (const width of [12, 16, 20, 24]) {
+		const layout = layoutWidgetLine(threeWindows(), LAYOUT_NOW, width);
+		assert.equal(layout.segments.length, 1, `width ${width}`);
+		assert.equal(layout.segments[0]!.label, "5h", `width ${width}`);
+	}
 });
 
 test("layoutWidgetLine: showCountdown=false gives the track the full width", () => {
@@ -298,4 +308,31 @@ test("layoutWidgetLine: -- percents overlay in the empty track (no resets, no cd
 
 test("layoutWidgetLine: empty windows produce an empty layout", () => {
 	assert.deepEqual(layoutWidgetLine([], LAYOUT_NOW, 100), { segments: [], showCountdown: false });
+});
+test("layoutWidgetLine never exceeds the width budget", () => {
+	const windows: UsageWindowState[] = [
+		{ key: "rolling", label: "5h", usagePercent: 8, limitDollars: 12, resetsAtMs: 1_800_000_000_000 },
+		{ key: "weekly", label: "week", usagePercent: 44, limitDollars: 30, resetsAtMs: 1_800_000_000_000 },
+		{ key: "monthly", label: "month", usagePercent: 43, limitDollars: 60, resetsAtMs: 1_800_000_000_000 },
+	];
+	const rendered = (layout: ReturnType<typeof layoutWidgetLine>) =>
+		3 +
+		layout.segments.reduce(
+			(acc, segment, i) =>
+				acc +
+				(i > 0 ? 3 : 0) +
+				segment.label.length +
+				1 +
+				segment.gaugeWidth +
+				(segment.countdown !== undefined ? 2 + segment.countdown.length : 0),
+			0,
+		);
+	// Narrow budgets drop trailing windows (rolling survives) rather than wrap.
+	for (const width of [40, 48, 56, 64, 80, 120, 200]) {
+		const layout = layoutWidgetLine(windows, Date.now(), width, true);
+		assert.ok(layout.segments.length >= 1, `no segments at ${width}`);
+		assert.ok(rendered(layout) <= width, `overflow at ${width}: ${rendered(layout)}`);
+	}
+	// Generous width keeps all three windows.
+	assert.equal(layoutWidgetLine(windows, Date.now(), 200, true).segments.length, 3);
 });

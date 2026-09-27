@@ -17,12 +17,20 @@ export interface GoUsageConfig {
 	showCountdown: boolean;
 	/** Where the widget renders: prompt footer, session sidebar, or both. */
 	placement: "promptFooter" | "sidebar" | "both";
+	/**
+	 * Cell budget for the single-line widget. 0 (default) = auto (at most half
+	 * the row, min 48). A positive value is clamped to the terminal width. The
+	 * prompt footer is shared with the built-in items, so an unbounded line
+	 * wraps and loses labels.
+	 */
+	maxWidth: number;
 }
 
 export const DEFAULT_CONFIG: GoUsageConfig = {
 	layout: "single",
 	showCountdown: true,
 	placement: "promptFooter",
+	maxWidth: 0,
 };
 
 const PLACEMENTS = ["promptFooter", "sidebar", "both"] as const;
@@ -41,5 +49,9 @@ export function parseGoUsageConfig(json: unknown): GoUsageConfig {
 		typeof obj.placement === "string" && (PLACEMENTS as readonly string[]).includes(obj.placement)
 			? (obj.placement as GoUsageConfig["placement"])
 			: DEFAULT_CONFIG.placement;
-	return { layout, showCountdown, placement };
+	const maxWidth =
+		typeof obj.maxWidth === "number" && Number.isFinite(obj.maxWidth) && obj.maxWidth > 0
+			? Math.floor(obj.maxWidth)
+			: DEFAULT_CONFIG.maxWidth;
+	return { layout, showCountdown, placement, maxWidth };
 }
