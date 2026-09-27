@@ -257,6 +257,36 @@ function UsageWidget(props: { config: GoUsageConfig }) {
 
 // ------------------------------------------------------------------- plugin
 
+/** The /usage invocation (fresh fetch via shared state + dialog). */
+async function showUsageDialog(
+	context: { ui: { dialog: { alert(input: { title: string; message: string }): Promise<void> } } },
+	config: GoUsageConfig,
+): Promise<void> {
+	const apiKey = readApiKeyFromAuthStore();
+	if (apiKey === undefined) {
+		applyOutcome({
+			ok: false,
+			kind: "no-key",
+			error: 'No API key configured for provider "opencode-go".',
+		});
+	}
+	// /usage always fetches fresh — bypass the widget cache by resetting the
+	// shared fetchedAtMs first.
+	setShared((current) => (current === undefined ? current : { ...current, fetchedAtMs: 0 }));
+	await refresh();
+	const current = shared();
+	const message =
+		current !== undefined
+			? `${formatSnapshotText(current.data, config.showCountdown)}${
+					sharedStale() ? "\n(stale — last successful fetch, retry later)" : ""
+				}`
+			: (lastError ?? "usage unavailable: unknown error");
+	await context.ui.dialog.alert({
+		title: "OpenCode Go usage",
+		message,
+	});
+}
+
 export default Plugin.define({
 	id: "opencode-go-usage.tui",
 	setup(context) {
@@ -272,46 +302,33 @@ export default Plugin.define({
 		// Works regardless of which model is active (the widget itself stays
 		// gated on opencode-go). Shares the module-level fetch/state so the
 		// widget refreshes from the same fetch.
-		context.keymap.layer(() => ({
-			mode: "global",
-			priority: 10,
-			commands: [
-				{
-					id: "opencode-go-usage.snapshot",
-					title: "Show OpenCode Go usage",
-					group: "OpenCode Go",
-					palette: true,
-					slash: { name: "usage" },
-					suggested: true,
-					run: async (_input) => {
-						const apiKey = readApiKeyFromAuthStore();
-						if (apiKey === undefined) {
-							applyOutcome({
-								ok: false,
-								kind: "no-key",
-								error: 'No API key configured for provider "opencode-go".',
-							});
-						}
-						// /usage always fetches fresh — bypass the widget cache by
-						// resetting the shared fetchedAtMs first.
-						setShared((current) => (current === undefined ? current : { ...current, fetchedAtMs: 0 }));
-						await refresh();
-						const current = shared();
-						const message =
-							current !== undefined
-								? `${formatSnapshotText(current.data, config.showCountdown)}${
-										sharedStale() ? "\n(stale — last successful fetch, retry later)" : ""
-									}`
-								: (lastError ?? "usage unavailable: unknown error");
-						await context.ui.dialog.alert({
-							title: "OpenCode Go usage",
-							message,
-						});
-					},
-				},
-			],
-			bindings: [],
-		}));
+		//
+		// keymap.layer must run inside the host's reactive context — a bare
+		// setup() call fails with "Keymap.Provider is missing". Register it
+		// from an `app` slot contribution (docs' session-panel pattern), which
+		// mounts inside the Solid tree; the layer lives while that slot does.
+		context.ui.slot({
+			append: "app",
+			render: () => {
+			context.keymap.layer(() => ({
+					mode: "global",
+					priority: 10,
+					commands: [
+						{
+							id: "opencode-go-usage.snapshot",
+							title: "Show OpenCode Go usage",
+							group: "OpenCode Go",
+							palette: true,
+							slash: { name: "usage" },
+							suggested: true,
+							run: async (_input) => void (await showUsageDialog(context, config)),
+						},
+					],
+					bindings: [],
+				}));
+				return null;
+			},
+		});
 	},
 });
 
