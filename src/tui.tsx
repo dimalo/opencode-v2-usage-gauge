@@ -192,28 +192,28 @@ function UsageWidget(props: { config: GoUsageConfig }) {
 		const current = data();
 		const layout = layoutWidgetLine(current.windows, now(), width(), props.config.showCountdown);
 		return (
-			<box flexDirection="row">
-				<text fg={color("dim")}>Go </text>
+			<text>
+				<span style={{ fg: color("dim") }}>Go </span>
 				<For each={layout.segments}>
 					{(segment, i) => (
-						<box flexDirection="row">
+						<>
 							<Show when={i() > 0}>
-								<text fg={color("dim")}> · </text>
+								<span style={{ fg: color("dim") }}> · </span>
 							</Show>
-							<text fg={color("base")}>{segment.label} </text>
+							<span style={{ fg: color("base") }}>{segment.label} </span>
 							<For each={buildGaugeSpans(segment)}>
-								{(span) => <text fg={color(span.color)}>{span.text}</text>}
+								{(span) => <span style={{ fg: color(span.color) }}>{span.text}</span>}
 							</For>
 							<Show when={layout.showCountdown && segment.countdown}>
-								<text fg={color("dim")}> ⟳{segment.countdown}</text>
+								<span style={{ fg: color("dim") }}> ⟳{segment.countdown}</span>
 							</Show>
-						</box>
+						</>
 					)}
 				</For>
 				<Show when={sharedStale()}>
-					<text fg={color("warning")}> (stale)</text>
+					<span style={{ fg: color("warning") }}> (stale)</span>
 				</Show>
-			</box>
+			</text>
 		);
 	};
 
@@ -223,27 +223,28 @@ function UsageWidget(props: { config: GoUsageConfig }) {
 		const nowMs = now();
 		const lines: any[] = [];
 		lines.push(
-			<text fg={color("dim")}>
-				OpenCode Go usage
+			<text>
+				<span style={{ fg: color("dim") }}>OpenCode Go usage</span>
 				<Show when={sharedStale()}> (stale)</Show>
 			</text>,
 		);
 		for (const state of current.windows) {
 			const parts = windowParts(state, nowMs);
 			const filled = barCells(state.usagePercent, 10);
+			const pctColor = state.usagePercent !== undefined ? color("base") : color("dim");
 			lines.push(
-				<box flexDirection="row">
-					<text fg={color("base")}>{state.label.padEnd(5)}</text>
-					<text fg={color(barColorName(state.usagePercent))}>{"█".repeat(filled)}</text>
-					<text fg={color("dim")}>{"░".repeat(10 - filled)} </text>
-					<text fg={state.usagePercent !== undefined ? color("base") : color("dim")}>{parts.pctText}</text>
+				<text wrapMode="none">
+					<span style={{ fg: color("base") }}>{state.label.padEnd(5)}</span>
+					<span style={{ fg: color(barColorName(state.usagePercent)) }}>{"█".repeat(filled)}</span>
+					<span style={{ fg: color("dim") }}>{"░".repeat(10 - filled)} </span>
+					<span style={{ fg: pctColor }}>{parts.pctText}</span>
 					<Show when={props.config.showCountdown && parts.resetText}>
-						<text fg={color("dim")}> reset {parts.resetText}</text>
+						<span style={{ fg: color("dim") }}> reset {parts.resetText}</span>
 					</Show>
-				</box>,
+				</text>,
 			);
 		}
-		return <box flexDirection="column">{lines}</box>;
+		return lines;
 	};
 
 	return (
