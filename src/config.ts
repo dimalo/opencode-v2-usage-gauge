@@ -15,12 +15,17 @@ export interface GoUsageConfig {
 	layout: WidgetLayout;
 	/** False hides all reset countdowns (widget and snapshot lines). */
 	showCountdown: boolean;
+	/** Where the widget renders: prompt footer, session sidebar, or both. */
+	placement: "promptFooter" | "sidebar" | "both";
 }
 
 export const DEFAULT_CONFIG: GoUsageConfig = {
 	layout: "single",
 	showCountdown: true,
+	placement: "promptFooter",
 };
+
+const PLACEMENTS = ["promptFooter", "sidebar", "both"] as const;
 
 /** Parse a config file payload into a validated config (defaults on any problem). */
 export function parseGoUsageConfig(json: unknown): GoUsageConfig {
@@ -32,5 +37,9 @@ export function parseGoUsageConfig(json: unknown): GoUsageConfig {
 		obj.layout === "single" || obj.layout === "multi" ? obj.layout : DEFAULT_CONFIG.layout;
 	const showCountdown =
 		typeof obj.showCountdown === "boolean" ? obj.showCountdown : DEFAULT_CONFIG.showCountdown;
-	return { layout, showCountdown };
+	const placement =
+		typeof obj.placement === "string" && (PLACEMENTS as readonly string[]).includes(obj.placement)
+			? (obj.placement as GoUsageConfig["placement"])
+			: DEFAULT_CONFIG.placement;
+	return { layout, showCountdown, placement };
 }

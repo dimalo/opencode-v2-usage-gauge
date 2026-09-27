@@ -293,11 +293,21 @@ export default Plugin.define({
 	setup(context) {
 		const config = parseGoUsageConfig(context.options);
 
-		// Widget claim: additive append to the built-in prompt footer status row.
-		context.ui.slot({
-			append: "prompt.footer.status",
-			render: () => <UsageWidget config={config} />,
-		});
+		// Widget claims. Both placements share one module-level snapshot and
+		// one fetch, so they never duplicate HTTP requests — the sidebar gets
+		// the multi-line bar layout (fits the narrow column).
+		if (config.placement === "promptFooter" || config.placement === "both") {
+			context.ui.slot({
+				append: "prompt.footer.status",
+				render: () => <UsageWidget config={config} />,
+			});
+		}
+		if (config.placement === "sidebar" || config.placement === "both") {
+			context.ui.slot({
+				append: "sidebar.footer",
+				render: () => <UsageWidget config={{ ...config, layout: "multi" }} />,
+			});
+		}
 
 		// /usage slash + palette command: always a fresh fetch, then dialog.
 		// Works regardless of which model is active (the widget itself stays
